@@ -1,0 +1,375 @@
+<ng-container *ngIf="!loading(); else loadingState">
+  <main class="settings-shell">
+    <section class="hero-card">
+      <div class="hero-copy">
+        <p class="eyebrow">Free Experience, Upgraded Feel</p>
+        <h2>Give every Woo-RAG install a UI worth exploring.</h2>
+        <p class="lede">
+          This refresh keeps the same core settings and indexing flow, but wraps them in a more intentional setup
+          experience so free users can feel the product quality before they ever see the premium dashboards.
+        </p>
+      </div>
+      <aside class="hero-aside">
+        <div class="status-stack">
+          <div class="pill" [class.ok]="effectiveSummary()?.chatReady">Chat {{ effectiveSummary()?.chatReady ? 'ready' : 'needs attention' }}</div>
+          <div class="pill" [class.ok]="effectiveSummary()?.embeddingsReady">Embeddings {{ effectiveSummary()?.embeddingsReady ? 'ready' : 'needs attention' }}</div>
+        </div>
+        <a class="upgrade-link" [href]="config.upgradeUrl" target="_blank" rel="noopener noreferrer">Preview premium direction</a>
+      </aside>
+    </section>
+
+    <section class="notice" *ngIf="statusMessage()" [class.success]="statusTone() === 'success'" [class.error]="statusTone() === 'error'">
+      {{ statusMessage() }}
+    </section>
+
+    <form class="settings-grid" [formGroup]="form" (ngSubmit)="save()">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Connection</p>
+            <h3>Provider Setup</h3>
+          </div>
+          <span class="badge">{{ isUsingSharedKeys() ? 'Using shared MyObserver keys' : 'Using Woo-RAG keys' }}</span>
+        </div>
+
+        <label class="toggle-row" *ngIf="currentSettings()?.sharedKeysAvailable">
+          <input type="checkbox" formControlName="useSeparateLlmKeys" />
+          <span>
+            Save and use separate chat and embedding keys for Woo-RAG.
+          </span>
+        </label>
+
+        <div class="form-grid" formGroupName="providers">
+          <label>
+            <span>Chat provider</span>
+            <select formControlName="chat">
+              <option value="openai">OpenAI</option>
+              <option value="claude">Claude</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Embeddings provider</span>
+            <select formControlName="embeddings">
+              <option value="openai">OpenAI</option>
+              <option value="claude">Claude</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="form-grid" formGroupName="keys">
+          <label>
+            <span>OpenAI API key</span>
+            <input type="password" formControlName="openai" autocomplete="off" placeholder="sk-..." />
+          </label>
+
+          <label>
+            <span>Claude API key</span>
+            <input type="password" formControlName="claude" autocomplete="off" placeholder="sk-ant-..." />
+          </label>
+        </div>
+
+        <label>
+          <span>Claude embeddings URL</span>
+          <input type="url" formControlName="claudeEmbeddingsUrl" placeholder="https://api.anthropic.com/v1/embeddings" />
+        </label>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Models</p>
+            <h3>Runtime Defaults</h3>
+          </div>
+        </div>
+
+        <div class="actions-row">
+          <button type="button" class="secondary" (click)="refreshOpenAiModels()" [disabled]="refreshingOpenAi()">
+            {{ refreshingOpenAi() ? 'Loading OpenAI...' : 'Refresh OpenAI models' }}
+          </button>
+          <button type="button" class="secondary" (click)="refreshClaudeModels()" [disabled]="refreshingClaude()">
+            {{ refreshingClaude() ? 'Loading Claude...' : 'Refresh Claude models' }}
+          </button>
+        </div>
+
+        <div class="form-grid" formGroupName="models">
+          <label>
+            <span>OpenAI chat model</span>
+            <select formControlName="openaiChat">
+              <option *ngFor="let model of openAiModels()" [value]="model">{{ model }}</option>
+            </select>
+          </label>
+
+          <label>
+            <span>OpenAI embedding model</span>
+            <select formControlName="openaiEmbeddings">
+              <option *ngFor="let model of openAiModels()" [value]="model">{{ model }}</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Claude chat model</span>
+            <select formControlName="claudeChat">
+              <option *ngFor="let model of claudeModels()" [value]="model">{{ model }}</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Claude embedding model</span>
+            <select formControlName="claudeEmbeddings">
+              <option *ngFor="let model of claudeModels()" [value]="model">{{ model }}</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Widget</p>
+            <h3>Assistant Personality</h3>
+          </div>
+        </div>
+
+        <label class="toggle-row">
+          <input type="checkbox" formControlName="widgetAutoInject" />
+          <span>Auto inject the chat widget in the site footer.</span>
+        </label>
+
+        <div class="stack" formGroupName="guardrails">
+          <label>
+            <span>Chat window title</span>
+            <input type="text" formControlName="chatTitle" />
+          </label>
+
+          <label>
+            <span>Welcome message</span>
+            <textarea rows="4" formControlName="welcomeMessage"></textarea>
+          </label>
+
+          <label>
+            <span>System prompt</span>
+            <textarea rows="7" formControlName="systemPrompt"></textarea>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Safety</p>
+            <h3>Guardrails and Indexing</h3>
+          </div>
+        </div>
+
+        <div class="stack compact" formGroupName="guardrails">
+          <label class="toggle-row">
+            <input type="checkbox" formControlName="maskPII" />
+            <span>Mask emails, phone numbers, and card-like numbers.</span>
+          </label>
+
+          <label class="toggle-row">
+            <input type="checkbox" formControlName="blockProfanity" />
+            <span>Block profane prompts with a safe refusal.</span>
+          </label>
+
+          <label class="toggle-row">
+            <input type="checkbox" formControlName="blockCompetitors" />
+            <span>Block prompts that mention competitor terms.</span>
+          </label>
+
+          <label>
+            <span>Competitor terms</span>
+            <input type="text" formControlName="competitorTokens" placeholder="Shopify, Magento, BigCommerce" />
+          </label>
+        </div>
+
+        <div class="index-card">
+          <p>Queue indexing jobs for every existing WooCommerce product.</p>
+          <button type="button" class="secondary" (click)="queueIndex()" [disabled]="queueing()">
+            {{ queueing() ? 'Queueing...' : 'Index all products' }}
+          </button>
+        </div>
+      </section>
+
+      <section class="panel panel-wide">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Product Intelligence Engine</p>
+            <h3>Product Intelligence Engine</h3>
+          </div>
+          <span class="badge">Free taste of the enhanced UI</span>
+        </div>
+
+        <div class="upload-shell">
+          <div class="upload-dropzone">
+            <p class="upload-title">Drop documents here or browse to upload.</p>
+            <p class="upload-copy">
+              Add store policies, fit guides, warranty notes, FAQs, and support docs so Woo-RAG can answer beyond the raw product catalog.
+            </p>
+            <label>
+              <span>Document title</span>
+              <input type="text" [value]="documentTitle()" (input)="setDocumentTitle($any($event.target).value)" placeholder="Optional title override" />
+            </label>
+            <div class="chip-row">
+              <span class="type-chip" *ngFor="let type of acceptedDocumentTypes">{{ type }}</span>
+            </div>
+            <div class="actions-row">
+              <button type="button" class="primary ghostish" (click)="browseForDocument()" [disabled]="uploadingDocument()">
+                {{ uploadingDocument() ? 'Uploading...' : 'Choose files' }}
+              </button>
+              <button type="button" class="secondary">Import from URL</button>
+            </div>
+            <input #documentFileInput type="file" hidden accept=".txt,.csv,.docx,.pdf,.md" (change)="uploadSelectedDocument($event)" />
+          </div>
+
+          <div class="upload-sidecard">
+            <h4>How the engine should work</h4>
+            <p>Upload a document, chunk it, embed it, and let retrieval combine those chunks with product matches during chat.</p>
+            <ul class="mini-list">
+              <li>Explain shipping, sizing, warranties, and policies.</li>
+              <li>Answer with both product facts and knowledge-base context.</li>
+              <li>Set the stage for product cross-references in Pro.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel panel-wide">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Product Intelligence Engine</p>
+            <h3>Engine Library and Product Links</h3>
+          </div>
+          <span class="badge">Preview section</span>
+        </div>
+
+        <div class="queue-head">
+          <div class="queue-summary">
+            <p>Browse uploaded intelligence documents as a queue instead of a table.</p>
+            <span class="doc-total">{{ totalDocuments() }} total documents</span>
+          </div>
+        </div>
+
+        <div class="document-empty" *ngIf="!documentsLoading() && documents().length === 0">
+          No documents uploaded yet. Upload a TXT, CSV, DOCX, or PDF file to start building the Product Intelligence Engine.
+        </div>
+
+        <div class="document-queue" #documentQueue *ngIf="documents().length > 0">
+          <article class="document-card" *ngFor="let doc of documents()">
+            <div class="document-topline">
+              <span class="doc-type">{{ documentMimeLabel(doc) }}</span>
+              <span class="doc-status">{{ doc.status }}</span>
+            </div>
+            <h4>{{ doc.title }}</h4>
+            <p>{{ doc.linked_product_ids.length }} linked products</p>
+            <p>Chunks: {{ doc.chunk_count }}</p>
+            <p>Updated {{ relativeUpdatedText(doc.updated_at) }}</p>
+            <div class="actions-row">
+              <button type="button" class="secondary" (click)="openReviewLinks(doc.id)">Review links</button>
+              <button type="button" class="secondary" (click)="reindexDocument(doc.id)" [disabled]="reindexingDocumentId() === doc.id">
+                {{ reindexingDocumentId() === doc.id ? 'Queueing...' : 'Reindex' }}
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <div class="queue-pager" *ngIf="documents().length > 0">
+          <button
+            type="button"
+            class="secondary queue-btn"
+            (click)="scrollDocumentQueue('left')"
+            [disabled]="currentQueuePage() === 0"
+          >
+            ←
+          </button>
+
+          <div class="queue-dots" aria-label="Document pages">
+            <button
+              type="button"
+              class="queue-dot"
+              *ngFor="let doc of documents(); let i = index"
+              [class.active]="currentQueuePage() === i"
+              (click)="scrollDocumentQueueToPage(i)"
+              [attr.aria-label]="'Go to document ' + (i + 1)"
+            ></button>
+          </div>
+
+          <button
+            type="button"
+            class="secondary queue-btn"
+            (click)="scrollDocumentQueue('right')"
+            [disabled]="currentQueuePage() === documents().length - 1"
+          >
+            →
+          </button>
+        </div>
+      </section>
+
+      <div class="footer-bar">
+        <p>Core settings stay free. Premium can build on top of this instead of hiding all the good UX behind an upgrade wall.</p>
+        <button type="submit" class="primary" [disabled]="saving()">
+          {{ saving() ? 'Saving...' : 'Save settings' }}
+        </button>
+      </div>
+    </form>
+  </main>
+
+  <section class="modal-backdrop" *ngIf="selectedDocument()" (click)="closeReviewLinks()">
+    <div class="modal-card" (click)="$event.stopPropagation()">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">Product Intelligence Engine</p>
+          <h3>Review Product Links</h3>
+        </div>
+        <button type="button" class="secondary queue-btn" (click)="closeReviewLinks()">×</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="modal-section">
+          <p class="modal-label">Document</p>
+          <h4>{{ selectedDocument()?.title }}</h4>
+          <p class="modal-copy">Review the products already connected to this document, then add another product if the content should help answer product-specific questions.</p>
+        </div>
+
+        <div class="modal-section">
+          <p class="modal-label">Linked products</p>
+          <div class="linked-list linked-list-scroll" *ngIf="linkedProducts().length; else noLinksState">
+            <div class="linked-item" *ngFor="let product of linkedProducts()">
+              <span>{{ product.name }}</span>
+              <button type="button" class="secondary remove-btn" (click)="removeLinkedProduct(product.id)">Remove</button>
+            </div>
+          </div>
+          <ng-template #noLinksState>
+            <p class="empty-state">No linked products yet. This can stay global, or you can connect a product now.</p>
+          </ng-template>
+        </div>
+
+        <div class="modal-section">
+          <p class="modal-label">Link another product</p>
+          <div class="link-row">
+            <input type="text" [value]="productSearchQuery()" (input)="setProductSearchQuery($any($event.target).value)" placeholder="Search products by name or SKU" />
+            <button type="button" class="secondary" (click)="searchProducts()" [disabled]="productSearchLoading()">
+              {{ productSearchLoading() ? 'Searching...' : 'Search' }}
+            </button>
+          </div>
+          <div class="link-row">
+            <select [value]="productToLink()" (change)="setProductToLink($any($event.target).value)">
+              <option value="">Search existing products</option>
+              <option *ngFor="let product of availableProducts()" [value]="product.id">{{ product.name }}{{ product.sku ? ' (' + product.sku + ')' : '' }}</option>
+            </select>
+            <button type="button" class="primary" (click)="addLinkedProduct()" [disabled]="productSearchLoading()">Link product</button>
+          </div>
+          <p class="picker-note">This dropdown is now backed by the existing WooCommerce product catalog.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</ng-container>
+
+<ng-template #loadingState>
+  <section class="loading-card">
+    <div class="spinner"></div>
+    <p>Loading your Woo-RAG settings...</p>
+  </section>
+</ng-template>
