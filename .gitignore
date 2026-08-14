@@ -1,2 +1,4 @@
 node_modules
 .angular
+extensions/chat-analytics-premium/chat-analytics-premium-tab.js
+extensions/chat-analytics-premium/manifest.example.json
