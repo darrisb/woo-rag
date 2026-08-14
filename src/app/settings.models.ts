@@ -9,8 +9,6 @@ export interface GuardrailSettings {
 }
 
 export interface SettingsPayload {
-  sharedKeysAvailable: boolean;
-  useSeparateLlmKeys: boolean;
   providers: {
     chat: 'openai' | 'claude';
     embeddings: 'openai' | 'claude';
@@ -42,6 +40,46 @@ export interface SettingsPayload {
 export interface QueueIndexResponse {
   message: string;
   queued: number;
+}
+
+export interface IndexStatsResponse {
+  ok: boolean;
+  status: string;
+  vectorsTotal: number;
+  productsIndexed: number;
+  documentVectors: number;
+  storageBytes: number;
+  files: {
+    vector: number;
+    meta: number;
+    graph: number;
+    payload: number;
+  };
+  lastOptimizeAt: string;
+}
+
+export interface RetrievalDiagnosticResult {
+  productId: number;
+  title: string;
+  score: number;
+  distance: number;
+  latencyMs: number;
+  matchedChunk: string;
+  vectorRank: number | null;
+  keywordRank: number | null;
+}
+
+export interface RetrievalDiagnosticsResponse {
+  ok: boolean;
+  latencyMs: number;
+  results: RetrievalDiagnosticResult[];
+  cache: {
+    hits: number;
+    misses: number;
+    exactHits: number;
+    semanticHits: number;
+    hitRate: number;
+  };
 }
 
 export interface ProductLinkItem {
@@ -116,4 +154,34 @@ export interface DocumentReindexResponse {
   ok: boolean;
   message: string;
   document: DocumentItem;
+}
+
+export interface DocumentDeleteResponse {
+  ok: boolean;
+  message: string;
+}
+
+export interface SettingsUiExtensionTab {
+  id: string;
+  label: string;
+  section: 'widget';
+  type: 'custom-element';
+  elementTag: string;
+  scriptUrl: string;
+  order?: number;
+}
+
+export interface SettingsUiExtensionManifest {
+  version: string;
+  tabs: SettingsUiExtensionTab[];
+}
+
+export interface SettingsUiShellTab {
+  id: string;
+  label: string;
+  section: 'widget';
+  type: 'builtin' | 'custom-element';
+  elementTag?: string;
+  scriptUrl?: string;
+  order: number;
 }

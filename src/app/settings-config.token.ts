@@ -34,6 +34,10 @@ export interface SettingsUiConfig {
     openAiModels: string;
     claudeModels: string;
   };
+  extensions: {
+    manifestUrl: string;
+    assetsBaseUrl: string;
+  };
   upgradeUrl: string;
 }
 
@@ -77,6 +81,10 @@ const fallbackConfig: SettingsUiConfig = {
     openAiModels: 'dev',
     claudeModels: 'dev',
   },
+  extensions: {
+    manifestUrl: '/wp-content/plugins/my-observer-rag-chat-assistant-for-woocommerce/assets/settings-ui-extensions/manifest.json',
+    assetsBaseUrl: '/wp-content/plugins/my-observer-rag-chat-assistant-for-woocommerce/assets/settings-ui-extensions/',
+  },
   upgradeUrl: 'https://myobserver.io/#roadmap',
 };
 
@@ -97,6 +105,7 @@ export const SETTINGS_UI_CONFIG = new InjectionToken<SettingsUiConfig>(
         wp: { ...fallbackConfig.wp, ...(provided.wp ?? {}) },
         actions: { ...fallbackConfig.actions, ...(provided.actions ?? {}) },
         nonces: { ...fallbackConfig.nonces, ...(provided.nonces ?? {}) },
+        extensions: { ...fallbackConfig.extensions, ...(provided.extensions ?? {}) },
       };
     },
   }

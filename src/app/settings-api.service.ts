@@ -4,14 +4,17 @@ import { delay, map, Observable, of } from 'rxjs';
 import { SETTINGS_UI_CONFIG } from './settings-config.token';
 import {
   DocumentDetailResponse,
+  DocumentDeleteResponse,
   DocumentItem,
   DocumentLinksResponse,
   DocumentReindexResponse,
   DocumentsResponse,
   DocumentUploadResponse,
+  IndexStatsResponse,
   ProductLinkItem,
   ProductSearchResponse,
   QueueIndexResponse,
+  RetrievalDiagnosticsResponse,
   SettingsPayload,
 } from './settings.models';
 
@@ -205,6 +208,84 @@ export class SettingsApiService {
     );
   }
 
+  deleteDocument(documentId: number): Observable<DocumentDeleteResponse> {
+    if (this.isLocalPreview) {
+      return of({
+        ok: true,
+        message: 'Document deleted.',
+      }).pipe(delay(150));
+    }
+
+    return this.http.delete<DocumentDeleteResponse>(
+      this.restUrl(`/documents/${documentId}`),
+      {
+        headers: this.restHeaders(),
+      }
+    );
+  }
+
+  loadIndexStats(): Observable<IndexStatsResponse> {
+    if (this.isLocalPreview) {
+      return of({
+        ok: true,
+        status: 'healthy',
+        vectorsTotal: 412,
+        productsIndexed: 327,
+        documentVectors: 85,
+        storageBytes: 2845521,
+        files: {
+          vector: 1502200,
+          meta: 381440,
+          graph: 744112,
+          payload: 217769,
+        },
+        lastOptimizeAt: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
+      }).pipe(delay(150));
+    }
+
+    return this.http.get<IndexStatsResponse>(this.restUrl('/index/stats'), {
+      headers: this.restHeaders(),
+    });
+  }
+
+  runRetrievalDiagnostics(query: string, mode: 'vector' | 'keyword' | 'hybrid' = 'hybrid', topK = 5): Observable<RetrievalDiagnosticsResponse> {
+    if (this.isLocalPreview) {
+      return of({
+        ok: true,
+        latencyMs: 148,
+        cache: {
+          hits: 12,
+          misses: 4,
+          exactHits: 5,
+          semanticHits: 7,
+          hitRate: 75,
+        },
+        results: this.mockProductResults(query).slice(0, topK).map((product, index) => ({
+          productId: product.id,
+          title: product.name,
+          score: Number((0.97 - index * 0.08).toFixed(4)),
+          distance: Number((0.03 + index * 0.08).toFixed(4)),
+          latencyMs: 148,
+          matchedChunk: `${product.name} content preview for retrieval diagnostics.`,
+          vectorRank: index + 1,
+          keywordRank: mode === 'vector' ? null : index + 1,
+        })),
+      }).pipe(delay(180));
+    }
+
+    return this.http.post<RetrievalDiagnosticsResponse>(
+      this.restUrl('/diagnostics/retrieval'),
+      {
+        query: query.trim(),
+        mode,
+        topK,
+      },
+      {
+        headers: this.restHeaders(),
+      }
+    );
+  }
+
   private ajaxBody(action: string, nonce: string): HttpParams {
     return new HttpParams()
       .set('action', action)
@@ -232,8 +313,6 @@ export class SettingsApiService {
 
   private mockSettings(): SettingsPayload {
     return {
-      sharedKeysAvailable: true,
-      useSeparateLlmKeys: false,
       providers: {
         chat: 'openai',
         embeddings: 'openai',

@@ -1,11 +1,12 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, ElementRef, ViewChild, ViewEncapsulation, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnDestroy, ViewChild, ViewEncapsulation, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { finalize } from 'rxjs';
 import { SettingsApiService } from './settings-api.service';
 import { SETTINGS_UI_CONFIG } from './settings-config.token';
-import { DocumentItem, ProductLinkItem, SettingsPayload } from './settings.models';
+import { SettingsUiExtensionsService } from './settings-ui-extensions.service';
+import { DocumentItem, IndexStatsResponse, ProductLinkItem, RetrievalDiagnosticResult, SettingsPayload, SettingsUiShellTab } from './settings.models';
 
 @Component({
   selector: 'myobserver-rag-settings-ui',
@@ -18,13 +19,28 @@ import { DocumentItem, ProductLinkItem, SettingsPayload } from './settings.model
 export class AppComponent {
   private readonly fb = inject(FormBuilder);
   private readonly api = inject(SettingsApiService);
+  private readonly extensions = inject(SettingsUiExtensionsService);
   protected readonly config = inject(SETTINGS_UI_CONFIG);
+  private readonly statusTimeouts = new Map<string, number>();
+  private documentRefreshTimeoutId: number | null = null;
 
   protected readonly loading = signal(true);
   protected readonly saving = signal(false);
   protected readonly queueing = signal(false);
   protected readonly statusMessage = signal('');
   protected readonly statusTone = signal<'neutral' | 'success' | 'error'>('neutral');
+  protected readonly modelsStatusMessage = signal('');
+  protected readonly modelsStatusTone = signal<'neutral' | 'success' | 'error'>('neutral');
+  protected readonly diagnosticsStatusMessage = signal('');
+  protected readonly diagnosticsStatusTone = signal<'neutral' | 'success' | 'error'>('neutral');
+  protected readonly indexingStatusMessage = signal('');
+  protected readonly indexingStatusTone = signal<'neutral' | 'success' | 'error'>('neutral');
+  protected readonly uploadStatusMessage = signal('');
+  protected readonly uploadStatusTone = signal<'neutral' | 'success' | 'error'>('neutral');
+  protected readonly libraryStatusMessage = signal('');
+  protected readonly libraryStatusTone = signal<'neutral' | 'success' | 'error'>('neutral');
+  protected readonly modalStatusMessage = signal('');
+  protected readonly modalStatusTone = signal<'neutral' | 'success' | 'error'>('neutral');
   protected readonly currentSettings = signal<SettingsPayload | null>(null);
   protected readonly openAiModels = signal<string[]>([]);
   protected readonly claudeModels = signal<string[]>([]);
@@ -44,13 +60,29 @@ export class AppComponent {
   protected readonly documentTitle = signal('');
   protected readonly currentQueuePage = signal(0);
   protected readonly productSearchQuery = signal('');
+  protected readonly pendingDeleteDocument = signal<DocumentItem | null>(null);
+  protected readonly widgetTabs = signal<SettingsUiShellTab[]>([
+    { id: 'assistant', label: 'Assistant', section: 'widget', type: 'builtin', order: 10 },
+    { id: 'diagnostics', label: 'Diagnostics', section: 'widget', type: 'builtin', order: 20 },
+    { id: 'safety', label: 'Safety', section: 'widget', type: 'builtin', order: 25 },
+  ]);
+  protected readonly activeWidgetTab = signal('assistant');
+  protected readonly indexStatsLoading = signal(false);
+  protected readonly indexStats = signal<IndexStatsResponse | null>(null);
+  protected readonly diagnosticsQuery = signal('');
+  protected readonly diagnosticsMode = signal<'vector' | 'keyword' | 'hybrid'>('hybrid');
+  protected readonly diagnosticsLoading = signal(false);
+  protected readonly diagnosticsLatency = signal<number | null>(null);
+  protected readonly diagnosticsResults = signal<RetrievalDiagnosticResult[]>([]);
+  protected readonly diagnosticsResultsOpen = signal(false);
+  protected readonly diagnosticsHasRun = signal(false);
 
   protected readonly effectiveSummary = computed(() => this.currentSettings()?.effective ?? null);
   @ViewChild('documentQueue') private documentQueue?: ElementRef<HTMLElement>;
   @ViewChild('documentFileInput') private documentFileInput?: ElementRef<HTMLInputElement>;
+  @ViewChild('externalWidgetTabHost') private externalWidgetTabHost?: ElementRef<HTMLElement>;
 
   protected readonly form = this.fb.nonNullable.group({
-    useSeparateLlmKeys: true,
     providers: this.fb.nonNullable.group({
       chat: 'openai' as 'openai' | 'claude',
       embeddings: 'openai' as 'openai' | 'claude',
@@ -82,6 +114,10 @@ export class AppComponent {
     this.load();
   }
 
+  ngOnDestroy(): void {
+    this.clearDocumentRefreshTimer();
+  }
+
   protected load(): void {
     this.loading.set(true);
     this.api
@@ -93,7 +129,6 @@ export class AppComponent {
           this.openAiModels.set(this.uniqueModels([settings.models.openaiChat, settings.models.openaiEmbeddings]));
           this.claudeModels.set(this.uniqueModels([settings.models.claudeChat, settings.models.claudeEmbeddings]));
           this.form.reset({
-            useSeparateLlmKeys: settings.useSeparateLlmKeys,
             providers: settings.providers,
             keys: settings.keys,
             models: settings.models,
@@ -102,6 +137,8 @@ export class AppComponent {
             guardrails: settings.guardrails,
           });
           this.loadDocuments();
+          this.loadIndexStats();
+          this.loadExtensionTabs();
         },
         error: (error) => this.setError(error, 'Could not load settings.'),
       });
@@ -114,7 +151,7 @@ export class AppComponent {
     }
 
     this.saving.set(true);
-    this.setStatus('Saving changes...', 'neutral');
+    this.setStatus('Saving changes...', 'neutral', 'global');
     const payload: SettingsPayload = {
       ...existing,
       ...this.form.getRawValue(),
@@ -130,9 +167,8 @@ export class AppComponent {
       .subscribe({
         next: (response) => {
           this.currentSettings.set(response.settings);
-          this.setStatus(response.message, 'success');
+          this.setStatus(response.message, 'success', 'global');
           this.form.reset({
-            useSeparateLlmKeys: response.settings.useSeparateLlmKeys,
             providers: response.settings.providers,
             keys: response.settings.keys,
             models: response.settings.models,
@@ -141,19 +177,19 @@ export class AppComponent {
             guardrails: response.settings.guardrails,
           });
         },
-        error: (error) => this.setError(error, 'Could not save settings.'),
+        error: (error) => this.setError(error, 'Could not save settings.', 'global'),
       });
   }
 
   protected queueIndex(): void {
     this.queueing.set(true);
-    this.setStatus('Queueing product indexing...', 'neutral');
+    this.setStatus('Queueing product indexing...', 'neutral', 'indexing');
     this.api
       .queueIndex()
       .pipe(finalize(() => this.queueing.set(false)))
       .subscribe({
-        next: (response) => this.setStatus(response.message, 'success'),
-        error: (error) => this.setError(error, 'Could not queue indexing.'),
+        next: (response) => this.setStatus(response.message, 'success', 'indexing'),
+        error: (error) => this.setError(error, 'Could not queue indexing.', 'indexing'),
       });
   }
 
@@ -166,9 +202,9 @@ export class AppComponent {
       .subscribe({
         next: (models) => {
           this.openAiModels.set(this.uniqueModels(models));
-          this.setStatus(`Loaded ${models.length} OpenAI models.`, 'success');
+          this.setStatus(`Loaded ${models.length} OpenAI models.`, 'success', 'models');
         },
-        error: (error) => this.setError(error, 'Could not load OpenAI models.'),
+        error: (error) => this.setError(error, 'Could not load OpenAI models.', 'models'),
       });
   }
 
@@ -181,18 +217,41 @@ export class AppComponent {
       .subscribe({
         next: (models) => {
           this.claudeModels.set(this.uniqueModels(models));
-          this.setStatus(`Loaded ${models.length} Claude models.`, 'success');
+          this.setStatus(`Loaded ${models.length} Claude models.`, 'success', 'models');
         },
-        error: (error) => this.setError(error, 'Could not load Claude models.'),
+        error: (error) => this.setError(error, 'Could not load Claude models.', 'models'),
       });
-  }
-
-  protected isUsingSharedKeys(): boolean {
-    return !!this.currentSettings()?.sharedKeysAvailable && !this.form.controls.useSeparateLlmKeys.value;
   }
 
   protected currentYear(): number {
     return new Date().getFullYear();
+  }
+
+  protected setActiveWidgetTab(tabId: string): void {
+    this.activeWidgetTab.set(tabId);
+
+    if (tabId === 'diagnostics' && this.indexStats() === null && !this.indexStatsLoading()) {
+      this.loadIndexStats();
+    }
+
+    if (this.isBuiltInWidgetTab(tabId)) {
+      return;
+    }
+
+    void this.renderExternalWidgetTab(tabId);
+  }
+
+  protected showWidgetUpgradeCta(): boolean {
+    return !this.widgetTabs().some((tab) => tab.id === 'chat-analytics');
+  }
+
+  protected openWidgetUpgrade(): void {
+    const url = String(this.config.upgradeUrl || '').trim();
+    if (url === '') {
+      return;
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 
   protected scrollDocumentQueue(direction: 'left' | 'right'): void {
@@ -233,7 +292,7 @@ export class AppComponent {
           this.linkedProducts.set(response.linkedProducts);
           this.loadProductOptions('');
         },
-        error: (error) => this.setError(error, 'Could not load document links.'),
+        error: (error) => this.setError(error, 'Could not load document links.', 'modal'),
       });
   }
 
@@ -265,7 +324,7 @@ export class AppComponent {
     }
 
     this.uploadingDocument.set(true);
-    this.setStatus('Uploading document...', 'neutral');
+    this.setStatus('Uploading document...', 'neutral', 'upload');
     this.api.uploadDocument(file, this.documentTitle())
       .pipe(finalize(() => {
         this.uploadingDocument.set(false);
@@ -275,16 +334,84 @@ export class AppComponent {
       }))
       .subscribe({
         next: (response) => {
-          this.setStatus(`${response.document.title} uploaded and queued for processing.`, 'success');
+          this.setStatus(`${response.document.title} uploaded and queued for processing.`, 'success', 'upload');
           this.documentTitle.set('');
           this.loadDocuments();
         },
-        error: (error) => this.setError(error, 'Could not upload document.'),
+        error: (error) => this.setError(error, 'Could not upload document.', 'upload'),
       });
   }
 
   protected setDocumentTitle(value: string): void {
     this.documentTitle.set(value);
+  }
+
+  protected setDiagnosticsQuery(value: string): void {
+    this.diagnosticsQuery.set(value);
+  }
+
+  protected setDiagnosticsMode(value: string): void {
+    if (value === 'vector' || value === 'keyword' || value === 'hybrid') {
+      this.diagnosticsMode.set(value);
+    }
+  }
+
+  protected closeDiagnosticsResults(): void {
+    this.diagnosticsResultsOpen.set(false);
+  }
+
+  protected refreshIndexStats(): void {
+    this.loadIndexStats();
+  }
+
+  protected runDiagnostics(): void {
+    const query = this.diagnosticsQuery().trim();
+    if (query === '') {
+      this.diagnosticsResultsOpen.set(false);
+      this.diagnosticsHasRun.set(false);
+      this.setStatus('Enter a product question or keyword to run retrieval diagnostics.', 'error', 'diagnostics');
+      return;
+    }
+
+    this.diagnosticsLoading.set(true);
+    this.diagnosticsHasRun.set(true);
+    this.api.runRetrievalDiagnostics(query, this.diagnosticsMode())
+      .pipe(finalize(() => this.diagnosticsLoading.set(false)))
+      .subscribe({
+        next: (response) => {
+          this.diagnosticsLatency.set(response.latencyMs);
+          this.diagnosticsResults.set(response.results ?? []);
+          if ((response.results ?? []).length === 0) {
+            this.diagnosticsResultsOpen.set(false);
+            this.setStatus('Diagnostics completed, but no matching products were returned for that query.', 'error', 'diagnostics');
+            return;
+          }
+
+          this.diagnosticsResultsOpen.set(true);
+          this.setStatus(`Diagnostics returned ${response.results.length} result${response.results.length === 1 ? '' : 's'}.`, 'success', 'diagnostics');
+        },
+        error: (error) => {
+          this.diagnosticsResultsOpen.set(false);
+          this.diagnosticsResults.set([]);
+          this.setError(error, 'Could not run retrieval diagnostics.', 'diagnostics');
+        },
+      });
+  }
+
+  protected formatBytes(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+      return '0 B';
+    }
+
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let value = bytes;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex++;
+    }
+
+    return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
   }
 
   protected addLinkedProduct(): void {
@@ -313,10 +440,46 @@ export class AppComponent {
       .pipe(finalize(() => this.reindexingDocumentId.set(null)))
       .subscribe({
         next: (response) => {
-          this.setStatus(response.message, 'success');
+          this.setStatus(response.message, 'success', 'library');
+          this.loadDocuments();
+          this.scheduleDocumentRefresh();
+        },
+        error: (error) => this.setError(error, 'Could not queue document reindex.', 'library'),
+      });
+  }
+
+  protected confirmDeleteDocument(documentId: number): void {
+    const document = this.documents().find((item) => item.id === documentId) ?? this.selectedDocument();
+    if (!document) {
+      return;
+    }
+
+    this.pendingDeleteDocument.set(document);
+  }
+
+  protected cancelDeleteDocument(): void {
+    this.pendingDeleteDocument.set(null);
+  }
+
+  protected deleteDocument(): void {
+    const document = this.pendingDeleteDocument();
+    if (!document) {
+      return;
+    }
+
+    this.productSearchLoading.set(true);
+    this.api.deleteDocument(document.id)
+      .pipe(finalize(() => this.productSearchLoading.set(false)))
+      .subscribe({
+        next: (response) => {
+          if (this.selectedDocument()?.id === document.id) {
+            this.closeReviewLinks();
+          }
+          this.pendingDeleteDocument.set(null);
+          this.setStatus(response.message, 'success', 'library');
           this.loadDocuments();
         },
-        error: (error) => this.setError(error, 'Could not queue document reindex.'),
+        error: (error) => this.setError(error, 'Could not delete document.', 'library'),
       });
   }
 
@@ -363,6 +526,67 @@ export class AppComponent {
     return [...new Set(models.filter((model) => model.trim() !== ''))].sort((a, b) => a.localeCompare(b));
   }
 
+  protected isBuiltInWidgetTab(tabId: string): boolean {
+    return tabId === 'assistant' || tabId === 'diagnostics' || tabId === 'safety';
+  }
+
+  private loadIndexStats(): void {
+    this.indexStatsLoading.set(true);
+    this.api.loadIndexStats()
+      .pipe(finalize(() => this.indexStatsLoading.set(false)))
+      .subscribe({
+        next: (response) => this.indexStats.set(response),
+        error: (error) => this.setError(error, 'Could not load index diagnostics.', 'diagnostics'),
+      });
+  }
+
+  private loadExtensionTabs(): void {
+    this.extensions.loadWidgetTabs().subscribe({
+      next: (tabs) => {
+        if (tabs.length === 0) {
+          return;
+        }
+
+        const merged = [...this.widgetTabs(), ...tabs]
+          .filter((tab, index, all) => all.findIndex((candidate) => candidate.id === tab.id) === index)
+          .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+        this.widgetTabs.set(merged);
+      },
+      error: () => {
+        // Manifest loading is optional; ignore missing premium assets silently.
+      },
+    });
+  }
+
+  private async renderExternalWidgetTab(tabId: string): Promise<void> {
+    if (this.isBuiltInWidgetTab(tabId)) {
+      return;
+    }
+
+    const host = this.externalWidgetTabHost?.nativeElement;
+    if (!host) {
+      window.setTimeout(() => {
+        void this.renderExternalWidgetTab(tabId);
+      }, 0);
+      return;
+    }
+
+    host.replaceChildren();
+    const tab = this.widgetTabs().find((candidate) => candidate.id === tabId);
+    if (!tab || tab.type !== 'custom-element' || !tab.elementTag) {
+      return;
+    }
+
+    try {
+      await this.extensions.ensureTabScript(tab);
+      const element = document.createElement(tab.elementTag);
+      element.setAttribute('data-tab-id', tab.id);
+      host.appendChild(element);
+    } catch (error) {
+      this.setError(error, `Could not load the ${tab.label} tab.`);
+    }
+  }
+
   private loadDocuments(): void {
     this.documentsLoading.set(true);
     this.api.loadDocuments()
@@ -372,9 +596,39 @@ export class AppComponent {
           this.documents.set(response.documents);
           this.totalDocuments.set(response.pagination.total);
           this.currentQueuePage.set(0);
+          if (this.hasPendingDocuments(response.documents)) {
+            this.scheduleDocumentRefresh();
+          } else {
+            this.clearDocumentRefreshTimer();
+          }
         },
-        error: (error) => this.setError(error, 'Could not load Product Intelligence Engine documents.'),
+        error: (error) => this.setError(error, 'Could not load Product Intelligence Engine documents.', 'library'),
       });
+  }
+
+  private hasPendingDocuments(documents: DocumentItem[]): boolean {
+    return documents.some((document) => {
+      const status = String(document.status || '').toLowerCase();
+      return status === 'uploaded' || status === 'processing' || status === 'needs_reindex';
+    });
+  }
+
+  private scheduleDocumentRefresh(delayMs = 4000): void {
+    if (this.documentRefreshTimeoutId !== null) {
+      return;
+    }
+
+    this.documentRefreshTimeoutId = window.setTimeout(() => {
+      this.documentRefreshTimeoutId = null;
+      this.loadDocuments();
+    }, delayMs);
+  }
+
+  private clearDocumentRefreshTimer(): void {
+    if (this.documentRefreshTimeoutId !== null) {
+      window.clearTimeout(this.documentRefreshTimeoutId);
+      this.documentRefreshTimeoutId = null;
+    }
   }
 
   private loadProductOptions(query: string): void {
@@ -383,7 +637,7 @@ export class AppComponent {
       .pipe(finalize(() => this.productSearchLoading.set(false)))
       .subscribe({
         next: (products) => this.availableProducts.set(products),
-        error: (error) => this.setError(error, 'Could not search products.'),
+        error: (error) => this.setError(error, 'Could not search products.', 'modal'),
       });
   }
 
@@ -401,22 +655,103 @@ export class AppComponent {
           this.selectedDocument.set(response.document);
           this.linkedProducts.set(response.linkedProducts);
           this.productToLink.set('');
-          this.setStatus(successMessage, 'success');
+          this.setStatus(successMessage, 'success', 'modal');
           this.loadDocuments();
         },
-        error: (error) => this.setError(error, 'Could not update document links.'),
+        error: (error) => this.setError(error, 'Could not update document links.', 'modal'),
       });
   }
 
-  private setStatus(message: string, tone: 'neutral' | 'success' | 'error'): void {
-    this.statusMessage.set(message);
-    this.statusTone.set(tone);
+  private setStatus(message: string, tone: 'neutral' | 'success' | 'error', scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal' = 'global'): void {
+    const normalized = String(message || '');
+    this.clearStatusTimeout(scope);
+    switch (scope) {
+      case 'models':
+        this.modelsStatusMessage.set(normalized);
+        this.modelsStatusTone.set(tone);
+        this.scheduleStatusClear(scope, normalized);
+        return;
+      case 'diagnostics':
+        this.diagnosticsStatusMessage.set(normalized);
+        this.diagnosticsStatusTone.set(tone);
+        this.scheduleStatusClear(scope, normalized);
+        return;
+      case 'indexing':
+        this.indexingStatusMessage.set(normalized);
+        this.indexingStatusTone.set(tone);
+        this.scheduleStatusClear(scope, normalized);
+        return;
+      case 'upload':
+        this.uploadStatusMessage.set(normalized);
+        this.uploadStatusTone.set(tone);
+        this.scheduleStatusClear(scope, normalized);
+        return;
+      case 'library':
+        this.libraryStatusMessage.set(normalized);
+        this.libraryStatusTone.set(tone);
+        this.scheduleStatusClear(scope, normalized);
+        return;
+      case 'modal':
+        this.modalStatusMessage.set(normalized);
+        this.modalStatusTone.set(tone);
+        this.scheduleStatusClear(scope, normalized);
+        return;
+      default:
+        this.statusMessage.set(normalized);
+        this.statusTone.set(tone);
+        this.scheduleStatusClear(scope, normalized);
+    }
   }
 
-  private setError(error: unknown, fallback: string): void {
+  private setError(error: unknown, fallback: string, scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal' = 'global'): void {
     const message = error instanceof HttpErrorResponse
       ? (error.error?.data?.message ?? error.error?.message ?? fallback)
       : fallback;
-    this.setStatus(String(message || fallback), 'error');
+    this.setStatus(String(message || fallback), 'error', scope);
+  }
+
+  private scheduleStatusClear(scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal', message: string): void {
+    if (message === '') {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      this.clearStatus(scope);
+      this.statusTimeouts.delete(scope);
+    }, 5000);
+    this.statusTimeouts.set(scope, timeoutId);
+  }
+
+  private clearStatusTimeout(scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal'): void {
+    const timeoutId = this.statusTimeouts.get(scope);
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+      this.statusTimeouts.delete(scope);
+    }
+  }
+
+  private clearStatus(scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal'): void {
+    switch (scope) {
+      case 'models':
+        this.modelsStatusMessage.set('');
+        return;
+      case 'diagnostics':
+        this.diagnosticsStatusMessage.set('');
+        return;
+      case 'indexing':
+        this.indexingStatusMessage.set('');
+        return;
+      case 'upload':
+        this.uploadStatusMessage.set('');
+        return;
+      case 'library':
+        this.libraryStatusMessage.set('');
+        return;
+      case 'modal':
+        this.modalStatusMessage.set('');
+        return;
+      default:
+        this.statusMessage.set('');
+    }
   }
 }

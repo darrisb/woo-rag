@@ -3,10 +3,10 @@
     <section class="hero-card">
       <div class="hero-copy">
         <p class="eyebrow">Free Experience, Upgraded Feel</p>
-        <h2>Give every Woo-RAG install a UI worth exploring.</h2>
+        <h2>A cleaner control center for your Woo-RAG install.</h2>
         <p class="lede">
           This refresh keeps the same core settings and indexing flow, but wraps them in a more intentional setup
-          experience so free users can feel the product quality before they ever see the premium dashboards.
+          experience.
         </p>
       </div>
       <aside class="hero-aside">
@@ -14,7 +14,6 @@
           <div class="pill" [class.ok]="effectiveSummary()?.chatReady">Chat {{ effectiveSummary()?.chatReady ? 'ready' : 'needs attention' }}</div>
           <div class="pill" [class.ok]="effectiveSummary()?.embeddingsReady">Embeddings {{ effectiveSummary()?.embeddingsReady ? 'ready' : 'needs attention' }}</div>
         </div>
-        <a class="upgrade-link" [href]="config.upgradeUrl" target="_blank" rel="noopener noreferrer">Preview premium direction</a>
       </aside>
     </section>
 
@@ -29,15 +28,8 @@
             <p class="eyebrow">Connection</p>
             <h3>Provider Setup</h3>
           </div>
-          <span class="badge">{{ isUsingSharedKeys() ? 'Using shared MyObserver keys' : 'Using Woo-RAG keys' }}</span>
+          <span class="badge">API keys</span>
         </div>
-
-        <label class="toggle-row" *ngIf="currentSettings()?.sharedKeysAvailable">
-          <input type="checkbox" formControlName="useSeparateLlmKeys" />
-          <span>
-            Save and use separate chat and embedding keys for Woo-RAG.
-          </span>
-        </label>
 
         <div class="form-grid" formGroupName="providers">
           <label>
@@ -58,14 +50,20 @@
         </div>
 
         <div class="form-grid" formGroupName="keys">
-          <label>
+          <label class="key-field">
             <span>OpenAI API key</span>
             <input type="password" formControlName="openai" autocomplete="off" placeholder="sk-..." />
+            <small class="field-hint" [class.field-hint-empty]="!effectiveSummary()?.openAiConfigured">
+              Key saved securely. Leave blank to keep the current key.
+            </small>
           </label>
 
-          <label>
+          <label class="key-field">
             <span>Claude API key</span>
             <input type="password" formControlName="claude" autocomplete="off" placeholder="sk-ant-..." />
+            <small class="field-hint" [class.field-hint-empty]="!effectiveSummary()?.claudeConfigured">
+              Key saved securely. Leave blank to keep the current key.
+            </small>
           </label>
         </div>
 
@@ -83,11 +81,15 @@
           </div>
         </div>
 
+        <section class="notice inline-notice" *ngIf="modelsStatusMessage()" [class.success]="modelsStatusTone() === 'success'" [class.error]="modelsStatusTone() === 'error'">
+          {{ modelsStatusMessage() }}
+        </section>
+
         <div class="actions-row">
-          <button type="button" class="secondary" (click)="refreshOpenAiModels()" [disabled]="refreshingOpenAi()">
+          <button type="button" class="secondary action-utility-btn" (click)="refreshOpenAiModels()" [disabled]="refreshingOpenAi()">
             {{ refreshingOpenAi() ? 'Loading OpenAI...' : 'Refresh OpenAI models' }}
           </button>
-          <button type="button" class="secondary" (click)="refreshClaudeModels()" [disabled]="refreshingClaude()">
+          <button type="button" class="secondary action-utility-btn" (click)="refreshClaudeModels()" [disabled]="refreshingClaude()">
             {{ refreshingClaude() ? 'Loading Claude...' : 'Refresh Claude models' }}
           </button>
         </div>
@@ -100,8 +102,16 @@
             </select>
           </label>
 
-          <label>
+          <label class="field-with-tip">
             <span>OpenAI embedding model</span>
+            <button
+              type="button"
+              class="help-icon"
+              title="Embedding models must stay compatible with the vectors already stored in the index. Changing the model family or size usually means you need a full reindex."
+              aria-label="Embedding model compatibility help"
+            >
+              i
+            </button>
             <select formControlName="openaiEmbeddings">
               <option *ngFor="let model of openAiModels()" [value]="model">{{ model }}</option>
             </select>
@@ -114,8 +124,16 @@
             </select>
           </label>
 
-          <label>
+          <label class="field-with-tip">
             <span>Claude embedding model</span>
+            <button
+              type="button"
+              class="help-icon"
+              title="Embedding models must stay compatible with the vectors already stored in the index. Changing the model family or size usually means you need a full reindex."
+              aria-label="Embedding model compatibility help"
+            >
+              i
+            </button>
             <select formControlName="claudeEmbeddings">
               <option *ngFor="let model of claudeModels()" [value]="model">{{ model }}</option>
             </select>
@@ -123,7 +141,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel panel-wide">
         <div class="panel-head">
           <div>
             <p class="eyebrow">Widget</p>
@@ -131,65 +149,220 @@
           </div>
         </div>
 
-        <label class="toggle-row">
-          <input type="checkbox" formControlName="widgetAutoInject" />
-          <span>Auto inject the chat widget in the site footer.</span>
-        </label>
-
-        <div class="stack" formGroupName="guardrails">
-          <label>
-            <span>Chat window title</span>
-            <input type="text" formControlName="chatTitle" />
-          </label>
-
-          <label>
-            <span>Welcome message</span>
-            <textarea rows="4" formControlName="welcomeMessage"></textarea>
-          </label>
-
-          <label>
-            <span>System prompt</span>
-            <textarea rows="7" formControlName="systemPrompt"></textarea>
-          </label>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Safety</p>
-            <h3>Guardrails and Indexing</h3>
-          </div>
-        </div>
-
-        <div class="stack compact" formGroupName="guardrails">
-          <label class="toggle-row">
-            <input type="checkbox" formControlName="maskPII" />
-            <span>Mask emails, phone numbers, and card-like numbers.</span>
-          </label>
-
-          <label class="toggle-row">
-            <input type="checkbox" formControlName="blockProfanity" />
-            <span>Block profane prompts with a safe refusal.</span>
-          </label>
-
-          <label class="toggle-row">
-            <input type="checkbox" formControlName="blockCompetitors" />
-            <span>Block prompts that mention competitor terms.</span>
-          </label>
-
-          <label>
-            <span>Competitor terms</span>
-            <input type="text" formControlName="competitorTokens" placeholder="Shopify, Magento, BigCommerce" />
-          </label>
-        </div>
-
-        <div class="index-card">
-          <p>Queue indexing jobs for every existing WooCommerce product.</p>
-          <button type="button" class="secondary" (click)="queueIndex()" [disabled]="queueing()">
-            {{ queueing() ? 'Queueing...' : 'Index all products' }}
+        <div class="tab-row">
+          <button
+            type="button"
+            class="tab-btn"
+            *ngFor="let tab of widgetTabs()"
+            [class.active]="activeWidgetTab() === tab.id"
+            (click)="setActiveWidgetTab(tab.id)"
+          >
+            {{ tab.label }}
+          </button>
+          <button
+            type="button"
+            class="tab-btn tab-add-btn"
+            *ngIf="showWidgetUpgradeCta()"
+            (click)="openWidgetUpgrade()"
+            aria-label="Explore additional widget tabs"
+            title="Explore additional widget tabs"
+          >
+            +
           </button>
         </div>
+
+        <ng-container *ngIf="activeWidgetTab() === 'assistant'; else nonAssistantTab">
+          <label class="toggle-row">
+            <input type="checkbox" formControlName="widgetAutoInject" />
+            <span>Auto inject the chat widget in the site footer.</span>
+          </label>
+
+          <section class="notice inline-notice" role="note">
+            To add the chatbot to a specific page or post, insert the shortcode <code>[myobserver_rag_widget]</code>.
+            You can also use the legacy <code>[rag_bot_widget]</code> shortcode or enable auto inject to load it in the footer.
+          </section>
+
+          <div class="stack" formGroupName="guardrails">
+            <label>
+              <span>Chat window title</span>
+              <input type="text" formControlName="chatTitle" />
+            </label>
+
+            <label>
+              <span>Welcome message</span>
+              <textarea rows="4" formControlName="welcomeMessage"></textarea>
+            </label>
+
+            <label>
+              <span>System prompt</span>
+              <textarea rows="7" formControlName="systemPrompt"></textarea>
+            </label>
+          </div>
+        </ng-container>
+
+        <ng-template #nonAssistantTab>
+          <ng-container *ngIf="activeWidgetTab() === 'diagnostics'; else nonDiagnosticsTab">
+            <div class="diagnostics-shell">
+            <section class="notice inline-notice" *ngIf="diagnosticsStatusMessage()" [class.success]="diagnosticsStatusTone() === 'success'" [class.error]="diagnosticsStatusTone() === 'error'">
+              {{ diagnosticsStatusMessage() }}
+            </section>
+
+            <div class="diagnostics-grid">
+              <article class="diag-card">
+                <p class="diag-label">Runtime</p>
+                <h4>{{ indexStats()?.status || 'checking' }}</h4>
+                <p>Local vector index health for this install.</p>
+              </article>
+
+              <article class="diag-card">
+                <p class="diag-label">Products Indexed</p>
+                <h4>{{ indexStats()?.productsIndexed ?? 0 }}</h4>
+                <p>Current product vectors available to retrieval.</p>
+              </article>
+
+              <article class="diag-card">
+                <p class="diag-label">Document Chunks</p>
+                <h4>{{ indexStats()?.documentVectors ?? 0 }}</h4>
+                <p>Active uploaded document vectors in the shared knowledge store.</p>
+              </article>
+
+              <article class="diag-card">
+                <p class="diag-label">Total Active Vectors</p>
+                <h4>{{ indexStats()?.vectorsTotal ?? 0 }}</h4>
+                <p>Combined live product and document vectors available to retrieval.</p>
+              </article>
+
+              <article class="diag-card">
+                <p class="diag-label">Index Storage</p>
+                <h4>{{ formatBytes(indexStats()?.storageBytes ?? 0) }}</h4>
+                <p>Combined vector, graph, metadata, and payload size.</p>
+              </article>
+            </div>
+
+            <div class="actions-row">
+              <button type="button" class="secondary action-utility-btn" (click)="refreshIndexStats()" [disabled]="indexStatsLoading()">
+                {{ indexStatsLoading() ? 'Refreshing...' : 'Refresh stats' }}
+              </button>
+            </div>
+
+            <div class="diag-breakdown" *ngIf="indexStats() as stats">
+              <div><strong>Vector:</strong> {{ formatBytes(stats.files.vector) }}</div>
+              <div><strong>Graph:</strong> {{ formatBytes(stats.files.graph) }}</div>
+              <div><strong>Meta:</strong> {{ formatBytes(stats.files.meta) }}</div>
+              <div><strong>Payload:</strong> {{ formatBytes(stats.files.payload) }}</div>
+            </div>
+
+            <div class="diag-tester">
+              <div class="panel-head panel-head-tight">
+                <div>
+                  <p class="eyebrow">Diagnostic Test</p>
+                  <h3>Run Retrieval Diagnostics</h3>
+                </div>
+              </div>
+
+              <div class="stack">
+                <label>
+                  <span>Test query</span>
+                  <textarea rows="3" [value]="diagnosticsQuery()" (input)="setDiagnosticsQuery($any($event.target).value)" placeholder="Example: waterproof jacket for winter hiking"></textarea>
+                </label>
+
+                <label>
+                  <span>Search mode</span>
+                  <select [value]="diagnosticsMode()" (change)="setDiagnosticsMode($any($event.target).value)">
+                    <option value="hybrid">Hybrid</option>
+                    <option value="vector">Vector</option>
+                    <option value="keyword">Keyword</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="actions-row">
+                <button type="button" class="primary" (click)="runDiagnostics()" [disabled]="diagnosticsLoading()">
+                  {{ diagnosticsLoading() ? 'Running...' : 'Run diagnostic test' }}
+                </button>
+                <span class="diag-latency" *ngIf="diagnosticsLatency() !== null">
+                  {{ diagnosticsLatency() }} ms
+                </span>
+              </div>
+
+              <div
+                class="diag-results-drawer"
+                *ngIf="diagnosticsResults().length"
+                [class.open]="diagnosticsResultsOpen()"
+                [attr.aria-hidden]="!diagnosticsResultsOpen()"
+              >
+                <div class="diag-results-head">
+                  <div>
+                    <p class="eyebrow">Diagnostic Results</p>
+                    <h4>{{ diagnosticsResults().length }} ranked match{{ diagnosticsResults().length === 1 ? '' : 'es' }}</h4>
+                  </div>
+                  <button type="button" class="diag-close-btn" (click)="closeDiagnosticsResults()" aria-label="Close diagnostic results">
+                    Close
+                  </button>
+                </div>
+
+                <div class="diag-results-scroll">
+                  <article class="diag-result" *ngFor="let result of diagnosticsResults()">
+                    <div class="diag-result-head">
+                      <h4>{{ result.title }}</h4>
+                      <span class="diag-score">{{ result.score }}</span>
+                    </div>
+                    <p class="diag-meta">
+                      Product #{{ result.productId }} · Distance {{ result.distance }} · Vector {{ result.vectorRank ?? '—' }} · Keyword {{ result.keywordRank ?? '—' }}
+                    </p>
+                    <p>{{ result.matchedChunk }}</p>
+                  </article>
+                </div>
+              </div>
+
+              <ng-template #noDiagnosticResults>
+                <p class="empty-state" *ngIf="diagnosticsHasRun(); else diagnosticsStartState">
+                  No matching products were returned for that query and search mode.
+                </p>
+                <ng-template #diagnosticsStartState>
+                  <p class="empty-state">Run a diagnostic query to preview how core retrieval is ranking products.</p>
+                </ng-template>
+              </ng-template>
+            </div>
+            </div>
+          </ng-container>
+        </ng-template>
+
+        <ng-template #nonDiagnosticsTab>
+          <ng-container *ngIf="activeWidgetTab() === 'safety'; else externalWidgetTab">
+            <section class="notice inline-notice" *ngIf="indexingStatusMessage()" [class.success]="indexingStatusTone() === 'success'" [class.error]="indexingStatusTone() === 'error'">
+              {{ indexingStatusMessage() }}
+            </section>
+
+            <div class="stack compact" formGroupName="guardrails">
+              <label class="toggle-row">
+                <input type="checkbox" formControlName="maskPII" />
+                <span>Mask emails, phone numbers, and card-like numbers.</span>
+              </label>
+
+              <label class="toggle-row">
+                <input type="checkbox" formControlName="blockProfanity" />
+                <span>Block profane prompts with a safe refusal.</span>
+              </label>
+
+              <label class="toggle-row">
+                <input type="checkbox" formControlName="blockCompetitors" />
+                <span>Block prompts that mention competitor terms.</span>
+              </label>
+
+              <label>
+                <span>Competitor terms</span>
+                <input type="text" formControlName="competitorTokens" placeholder="Shopify, Magento, BigCommerce" />
+              </label>
+            </div>
+          </ng-container>
+        </ng-template>
+
+        <ng-template #externalWidgetTab>
+          <div class="extension-tab-shell">
+            <div class="extension-tab-host" #externalWidgetTabHost></div>
+          </div>
+        </ng-template>
       </section>
 
       <section class="panel panel-wide">
@@ -198,8 +371,12 @@
             <p class="eyebrow">Product Intelligence Engine</p>
             <h3>Product Intelligence Engine</h3>
           </div>
-          <span class="badge">Free taste of the enhanced UI</span>
+          <span class="badge">Upload workflow</span>
         </div>
+
+        <section class="notice inline-notice" *ngIf="uploadStatusMessage()" [class.success]="uploadStatusTone() === 'success'" [class.error]="uploadStatusTone() === 'error'">
+          {{ uploadStatusMessage() }}
+        </section>
 
         <div class="upload-shell">
           <div class="upload-dropzone">
@@ -218,18 +395,17 @@
               <button type="button" class="primary ghostish" (click)="browseForDocument()" [disabled]="uploadingDocument()">
                 {{ uploadingDocument() ? 'Uploading...' : 'Choose files' }}
               </button>
-              <button type="button" class="secondary">Import from URL</button>
             </div>
             <input #documentFileInput type="file" hidden accept=".txt,.csv,.docx,.pdf,.md" (change)="uploadSelectedDocument($event)" />
           </div>
 
           <div class="upload-sidecard">
-            <h4>How the engine should work</h4>
-            <p>Upload a document, chunk it, embed it, and let retrieval combine those chunks with product matches during chat.</p>
+            <h4>How document uploads should be used</h4>
+            <p>Upload real store knowledge that helps answer shopper questions more clearly than product descriptions alone.</p>
             <ul class="mini-list">
-              <li>Explain shipping, sizing, warranties, and policies.</li>
-              <li>Answer with both product facts and knowledge-base context.</li>
-              <li>Set the stage for product cross-references in Pro.</li>
+              <li>Use TXT, CSV, DOCX, or text-based PDF files for policies, fit guides, care instructions, warranties, FAQs, and support notes.</li>
+              <li>Link a document to specific products when the content is product-specific, or leave it unlinked when it should help across the whole store.</li>
+              <li>After upload, the file is processed into searchable chunks so chat can use both product data and document context in the same answer.</li>
             </ul>
           </div>
         </div>
@@ -244,9 +420,13 @@
           <span class="badge">Preview section</span>
         </div>
 
+        <section class="notice inline-notice" *ngIf="libraryStatusMessage()" [class.success]="libraryStatusTone() === 'success'" [class.error]="libraryStatusTone() === 'error'">
+          {{ libraryStatusMessage() }}
+        </section>
+
         <div class="queue-head">
           <div class="queue-summary">
-            <p>Browse uploaded intelligence documents as a queue instead of a table.</p>
+            <p>Review uploaded files, check their status, and open any document to inspect or adjust its linked products.</p>
             <span class="doc-total">{{ totalDocuments() }} total documents</span>
           </div>
         </div>
@@ -265,11 +445,12 @@
             <p>{{ doc.linked_product_ids.length }} linked products</p>
             <p>Chunks: {{ doc.chunk_count }}</p>
             <p>Updated {{ relativeUpdatedText(doc.updated_at) }}</p>
-            <div class="actions-row">
-              <button type="button" class="secondary" (click)="openReviewLinks(doc.id)">Review links</button>
-              <button type="button" class="secondary" (click)="reindexDocument(doc.id)" [disabled]="reindexingDocumentId() === doc.id">
+            <div class="actions-row document-actions">
+              <button type="button" class="document-action-btn" (click)="openReviewLinks(doc.id)">Review links</button>
+              <button type="button" class="document-action-btn" (click)="reindexDocument(doc.id)" [disabled]="reindexingDocumentId() === doc.id">
                 {{ reindexingDocumentId() === doc.id ? 'Queueing...' : 'Reindex' }}
               </button>
+              <button type="button" class="document-action-btn document-action-danger" (click)="confirmDeleteDocument(doc.id)">Delete</button>
             </div>
           </article>
         </div>
@@ -307,7 +488,6 @@
       </section>
 
       <div class="footer-bar">
-        <p>Core settings stay free. Premium can build on top of this instead of hiding all the good UX behind an upgrade wall.</p>
         <button type="submit" class="primary" [disabled]="saving()">
           {{ saving() ? 'Saving...' : 'Save settings' }}
         </button>
@@ -326,10 +506,17 @@
       </div>
 
       <div class="modal-body">
+        <section class="notice inline-notice" *ngIf="modalStatusMessage()" [class.success]="modalStatusTone() === 'success'" [class.error]="modalStatusTone() === 'error'">
+          {{ modalStatusMessage() }}
+        </section>
+
         <div class="modal-section">
           <p class="modal-label">Document</p>
           <h4>{{ selectedDocument()?.title }}</h4>
           <p class="modal-copy">Review the products already connected to this document, then add another product if the content should help answer product-specific questions.</p>
+          <div class="actions-row">
+            <button type="button" class="secondary" (click)="confirmDeleteDocument(selectedDocument()!.id)">Delete document</button>
+          </div>
         </div>
 
         <div class="modal-section">
@@ -366,6 +553,35 @@
     </div>
   </section>
 </ng-container>
+
+<section class="modal-backdrop" *ngIf="pendingDeleteDocument()" (click)="cancelDeleteDocument()">
+  <div class="modal-card modal-card-compact" (click)="$event.stopPropagation()">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">Confirm Delete</p>
+        <h3>Remove this document?</h3>
+      </div>
+      <button type="button" class="secondary queue-btn" (click)="cancelDeleteDocument()">×</button>
+    </div>
+
+    <div class="modal-body">
+      <div class="modal-section">
+        <p class="modal-label">Document</p>
+        <h4>{{ pendingDeleteDocument()?.title }}</h4>
+        <p class="modal-copy">
+          This will remove the uploaded file, linked chunks, and product links for this document from the Product Intelligence Engine.
+        </p>
+      </div>
+
+      <div class="actions-row actions-row-end">
+        <button type="button" class="secondary" (click)="cancelDeleteDocument()">Cancel</button>
+        <button type="button" class="primary danger" (click)="deleteDocument()" [disabled]="productSearchLoading()">
+          {{ productSearchLoading() ? 'Deleting...' : 'Delete document' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
 
 <ng-template #loadingState>
   <section class="loading-card">
