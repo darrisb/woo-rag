@@ -182,8 +182,11 @@ export class AppComponent {
   }
 
   protected queueIndex(): void {
+    if (this.queueing()) {
+      return;
+    }
     this.queueing.set(true);
-    this.setStatus('Queueing product indexing...', 'neutral', 'indexing');
+    this.setStatus('Starting product indexing...', 'neutral', 'indexing');
     this.api
       .queueIndex()
       .pipe(finalize(() => this.queueing.set(false)))
