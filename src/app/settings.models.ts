@@ -8,7 +8,71 @@ export interface GuardrailSettings {
   competitorTokens: string;
 }
 
+export interface HostedApiCapabilities {
+  service: string;
+  version: string;
+  timestamp: string;
+  billing: {
+    enabled: boolean;
+    checkout: boolean;
+    proKeyValidation: boolean;
+  };
+  runtime: {
+    enabled: boolean;
+    mode: string;
+    registerSite: boolean;
+    init: boolean;
+    chat: boolean;
+    sessionReset: boolean;
+    syncProducts: boolean;
+  };
+  widgetLoader: {
+    enabled: boolean;
+    path: string;
+  };
+}
+
+export interface HostedSyncStatus {
+  status: string;
+  productCount: number;
+  pageCount: number;
+  sourceUrl: string;
+  startedAt: string;
+  completedAt: string;
+  lastSuccessfulSyncAt: string;
+  lastModifiedSince: string;
+  lastError: string;
+}
+
+export interface HostedActivationStatus {
+  usage?: { used: number; limit: number; remaining: number; reached: boolean; resetsAt: string } | null;
+  siteId: string;
+  apiTokenConfigured: boolean;
+  bootstrapStatus: string;
+  registeredAt: string;
+  lastBootstrapCheckAt: string;
+  baseUrl: string;
+  registerUrl: string;
+  initUrl: string;
+  runtimeMode: string;
+  message: string;
+  access: {
+    available: boolean;
+    plan: string;
+    subscriptionStatus: string;
+    runtimeEnabled: boolean;
+    billingEnabled: boolean;
+    checkoutRequired: boolean;
+    paidActive?: boolean;
+    entitlementSource?: string;
+    upgradeRequired?: boolean;
+    upgradeAvailable?: boolean;
+  };
+  sync: HostedSyncStatus;
+}
+
 export interface SettingsPayload {
+  runtimeMode: 'local' | 'saas';
   providers: {
     chat: 'openai' | 'claude';
     embeddings: 'openai' | 'claude';
@@ -24,16 +88,23 @@ export interface SettingsPayload {
     claudeEmbeddings: string;
   };
   claudeEmbeddingsUrl: string;
+  hostedApiBaseUrl: string;
+  saasRegisterUrl: string;
   widgetAutoInject: boolean;
   guardrails: GuardrailSettings;
+  hosted: HostedActivationStatus;
   effective: {
+    runtimeMode: 'local' | 'saas';
     chatProvider: string;
     embeddingsProvider: string;
     openAiConfigured: boolean;
     claudeConfigured: boolean;
+    hostedApiConfigured: boolean;
+    saasRegisterConfigured: boolean;
     chatReady: boolean;
     embeddingsReady: boolean;
     claudeEmbeddingsUrl: string;
+    hostedApiBaseUrl: string;
   };
 }
 

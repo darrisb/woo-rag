@@ -2,24 +2,44 @@
   <main class="settings-shell">
     <section class="hero-card">
       <div class="hero-copy">
-        <p class="eyebrow">Free Experience, Upgraded Feel</p>
-        <h2>A cleaner control center for your Woo-RAG install.</h2>
+        <p class="eyebrow">INTELLIGENT COMMERCE, SIMPLIFIED</p>
+        <h2>A cleaner control center for your store's RAG data</h2>
         <p class="lede">
-          This refresh keeps the same core settings and indexing flow, but wraps them in a more intentional setup
-          experience.
+          Easily monitor how My Observer indexes your WooCommerce products, document data, and store insights through a
+          beautifully streamlined dashboard.
         </p>
       </div>
       <aside class="hero-aside">
         <div class="status-stack">
-          <div class="pill" [class.ok]="effectiveSummary()?.chatReady">Chat {{ effectiveSummary()?.chatReady ? 'ready' : 'needs attention' }}</div>
-          <div class="pill" [class.ok]="effectiveSummary()?.embeddingsReady">Embeddings {{ effectiveSummary()?.embeddingsReady ? 'ready' : 'needs attention' }}</div>
+          <div class="pill" [class.ok]="effectiveSummary()?.chatReady">Chat {{ effectiveSummary()?.chatReady ? 'ready' :
+            'needs attention' }}</div>
+          <div class="pill" [class.ok]="effectiveSummary()?.embeddingsReady">Embeddings {{
+            effectiveSummary()?.embeddingsReady ? 'ready' : 'needs attention' }}</div>
+          <div class="pill" [class.ok]="modePillReady()">{{ isHostedMode() ? 'Hosted mode' : 'Local mode' }}</div>
         </div>
       </aside>
     </section>
 
-    <section class="notice" *ngIf="statusMessage()" [class.success]="statusTone() === 'success'" [class.error]="statusTone() === 'error'">
+    <section class="notice" *ngIf="statusMessage()" [class.success]="statusTone() === 'success'"
+      [class.error]="statusTone() === 'error'">
       {{ statusMessage() }}
     </section>
+
+    <ng-container *ngIf="isHostedMode()">
+      <section class="notice" role="status" aria-live="polite" *ngIf="hostedActivation()?.usage as usage"
+        [class.error]="usage.reached">
+        <strong *ngIf="usage.reached">Monthly message limit reached.</strong>
+        <span>{{ usage.used | number }}<ng-container *ngIf="usage.limit > 0"> / {{ usage.limit | number
+            }}</ng-container> messages used this month.</span>
+        <ng-container *ngIf="usage.reached">
+          <p>Customers will receive a temporary assistance message. Your plan and billing details are not shown in chat.
+          </p>
+          <p *ngIf="usage.resetsAt">Your allowance resets on {{ usage.resetsAt | date:'mediumDate':'UTC' }} (UTC).</p>
+          <button type="button" class="primary" *ngIf="hostedActivation()?.access?.plan === 'free'"
+            (click)="openWidgetUpgrade()">Upgrade to Pro</button>
+        </ng-container>
+      </section>
+    </ng-container>
 
     <form class="settings-grid" [formGroup]="form" (ngSubmit)="save()">
       <section class="panel">
@@ -28,52 +48,148 @@
             <p class="eyebrow">Connection</p>
             <h3>Provider Setup</h3>
           </div>
-          <span class="badge">API keys</span>
-        </div>
-
-        <div class="form-grid" formGroupName="providers">
-          <label>
-            <span>Chat provider</span>
-            <select formControlName="chat">
-              <option value="openai">OpenAI</option>
-              <option value="claude">Claude</option>
-            </select>
-          </label>
-
-          <label>
-            <span>Embeddings provider</span>
-            <select formControlName="embeddings">
-              <option value="openai">OpenAI</option>
-              <option value="claude">Claude</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="form-grid" formGroupName="keys">
-          <label class="key-field">
-            <span>OpenAI API key</span>
-            <input type="password" formControlName="openai" autocomplete="off" placeholder="sk-..." />
-            <small class="field-hint" [class.field-hint-empty]="!effectiveSummary()?.openAiConfigured">
-              Key saved securely. Leave blank to keep the current key.
-            </small>
-          </label>
-
-          <label class="key-field">
-            <span>Claude API key</span>
-            <input type="password" formControlName="claude" autocomplete="off" placeholder="sk-ant-..." />
-            <small class="field-hint" [class.field-hint-empty]="!effectiveSummary()?.claudeConfigured">
-              Key saved securely. Leave blank to keep the current key.
-            </small>
-          </label>
+          <span class="badge">{{ isHostedMode() ? 'Hosted API' : 'API keys' }}</span>
         </div>
 
         <label>
-          <span>Claude embeddings URL</span>
-          <input type="url" formControlName="claudeEmbeddingsUrl" placeholder="https://api.anthropic.com/v1/embeddings" />
+          <span>Runtime mode</span>
+          <select formControlName="runtimeMode">
+            <option value="local">Local (BYOK)</option>
+            <option value="saas">Hosted MyObserver API</option>
+          </select>
         </label>
+
+        <section class="notice inline-notice" role="note" *ngIf="isHostedMode(); else localModeNote">
+          Hosted mode keeps the plugin installed but routes chat and embeddings through your MyObserver-managed API
+          instead of requiring each store owner to bring their own model keys.
+        </section>
+
+        <ng-template #localModeNote>
+          <section class="notice inline-notice" role="note">
+            Local mode keeps BYOK enabled for stores that want to use their own provider credentials directly.
+          </section>
+        </ng-template>
+
+        <ng-container *ngIf="isHostedMode(); else localProviderFields">
+          <div class="stack">
+            <section class="notice inline-notice" role="note">
+              Hosted connection URLs are bundled with the plugin and are not editable here.
+            </section>
+
+            <!-- <label>
+              <span>Hosted API base URL</span>
+              <input type="url" formControlName="hostedApiBaseUrl" placeholder="https://woo-rag-api.myobserver.io" [disabled]="true" />
+            </label>
+
+            <label>
+              <span>Site registration URL</span>
+              <input type="url" formControlName="saasRegisterUrl" placeholder="https://woo-rag-api.myobserver.io/v1/register-site" [disabled]="true" />
+            </label> -->
+
+            <div class="actions-row">
+              <button type="button" class="secondary action-utility-btn" (click)="checkHostedApi()"
+                [disabled]="validatingHostedApi()">
+                {{ validatingHostedApi() ? 'Checking hosted API...' : 'Check hosted API' }}
+              </button>
+              <button type="button" class="secondary action-utility-btn" (click)="registerHostedSite()"
+                [disabled]="registeringHostedSite()">
+                {{ registeringHostedSite() ? 'Registering site...' : 'Register site' }}
+              </button>
+              <button type="button" class="secondary action-utility-btn" (click)="refreshHostedStatus()"
+                [disabled]="refreshingHostedStatus()">
+                {{ refreshingHostedStatus() ? 'Refreshing status...' : 'Refresh hosted status' }}
+              </button>
+              <button type="button" class="secondary action-utility-btn" (click)="runHostedSync()"
+                [disabled]="syncingHostedCatalog()">
+                {{ syncingHostedCatalog() ? 'Syncing catalog...' : 'Run hosted sync' }}
+              </button>
+            </div>
+
+            <section class="notice inline-notice" *ngIf="hostedApiStatusMessage()"
+              [class.success]="hostedApiStatusTone() === 'success'" [class.error]="hostedApiStatusTone() === 'error'">
+              {{ hostedApiStatusMessage() }}
+            </section>
+
+            <section class="notice inline-notice" role="note" *ngIf="hostedApiCapabilities() as hostedCapabilities">
+              <strong>{{ hostedCapabilities.service || 'Hosted API' }}</strong>
+              version {{ hostedCapabilities.version || 'unknown' }}.
+              Billing {{ hostedCapabilities.billing.enabled ? 'enabled' : 'disabled' }}.
+              Runtime {{ hostedCapabilities.runtime.enabled ? 'enabled' : 'disabled' }}.
+              Register {{ hostedCapabilities.runtime.registerSite ? 'available' : 'unavailable' }}.
+              Init {{ hostedCapabilities.runtime.init ? 'available' : 'unavailable' }}.
+              Chat {{ hostedCapabilities.runtime.chat ? 'available' : 'unavailable' }}.
+              Sync {{ hostedCapabilities.runtime.syncProducts ? 'available' : 'unavailable' }}.
+              <span *ngIf="hostedApiCapabilitiesUrl()">Capabilities URL:
+                <code>{{ hostedApiCapabilitiesUrl() }}</code>.</span>
+            </section>
+
+            <section class="notice inline-notice" role="note" *ngIf="hostedActivation() as hosted">
+              <strong>Stored hosted state:</strong>
+              Site ID {{ hosted.siteId || 'not registered' }}.
+              Bootstrap {{ hosted.bootstrapStatus || 'unknown' }}.
+              Plan {{ hosted.access.plan || 'unknown' }}.
+              Subscription {{ hosted.access.subscriptionStatus || 'unknown' }}.
+              Runtime {{ hosted.access.runtimeEnabled ? 'enabled' : 'disabled' }}.
+              Checkout {{ hosted.access.checkoutRequired ? 'required' : 'not required' }}.
+              Token {{ hosted.apiTokenConfigured ? 'stored' : 'missing' }}.
+              Sync {{ hosted.sync.status || 'not run' }}.
+              Products {{ hosted.sync.productCount || 0 }}.
+              <span *ngIf="hosted.sync.pageCount">Pages {{ hosted.sync.pageCount }}.</span>
+              <span *ngIf="hosted.registeredAt">Registered {{ hosted.registeredAt }}.</span>
+              <span *ngIf="hosted.lastBootstrapCheckAt">Last check {{ hosted.lastBootstrapCheckAt }}.</span>
+              <span *ngIf="hosted.sync.lastSuccessfulSyncAt">Last sync {{ hosted.sync.lastSuccessfulSyncAt }}.</span>
+              <span *ngIf="hosted.sync.lastError">Sync error {{ hosted.sync.lastError }}.</span>
+              <span *ngIf="hosted.message">{{ hosted.message }}</span>
+            </section>
+          </div>
+        </ng-container>
+
+        <ng-template #localProviderFields>
+          <div class="form-grid" formGroupName="providers">
+            <label>
+              <span>Chat provider</span>
+              <select formControlName="chat">
+                <option value="openai">OpenAI</option>
+                <option value="claude">Claude</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Embeddings provider</span>
+              <select formControlName="embeddings">
+                <option value="openai">OpenAI</option>
+                <option value="claude">Claude</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="form-grid" formGroupName="keys">
+            <label class="key-field">
+              <span>OpenAI API key</span>
+              <input type="password" formControlName="openai" autocomplete="off" placeholder="sk-..." />
+              <small class="field-hint" [class.field-hint-empty]="!effectiveSummary()?.openAiConfigured">
+                Key saved securely. Leave blank to keep the current key.
+              </small>
+            </label>
+
+            <label class="key-field">
+              <span>Claude API key</span>
+              <input type="password" formControlName="claude" autocomplete="off" placeholder="sk-ant-..." />
+              <small class="field-hint" [class.field-hint-empty]="!effectiveSummary()?.claudeConfigured">
+                Key saved securely. Leave blank to keep the current key.
+              </small>
+            </label>
+          </div>
+
+          <label>
+            <span>Claude embeddings URL</span>
+            <input type="url" formControlName="claudeEmbeddingsUrl"
+              placeholder="https://api.anthropic.com/v1/embeddings" />
+          </label>
+        </ng-template>
       </section>
 
-      <section class="panel">
+      <section class="panel" [class.panel-disabled]="isHostedMode()">
         <div class="panel-head">
           <div>
             <p class="eyebrow">Models</p>
@@ -81,60 +197,61 @@
           </div>
         </div>
 
-        <section class="notice inline-notice" *ngIf="modelsStatusMessage()" [class.success]="modelsStatusTone() === 'success'" [class.error]="modelsStatusTone() === 'error'">
+        <section class="notice inline-notice" role="note" *ngIf="isHostedMode()">
+          Hosted mode manages chat and embedding models on the API, so local model settings are disabled here.
+        </section>
+
+        <section class="notice inline-notice" *ngIf="modelsStatusMessage()"
+          [class.success]="modelsStatusTone() === 'success'" [class.error]="modelsStatusTone() === 'error'">
           {{ modelsStatusMessage() }}
         </section>
 
-        <div class="actions-row">
-          <button type="button" class="secondary action-utility-btn" (click)="refreshOpenAiModels()" [disabled]="refreshingOpenAi()">
+        <div class="actions-row" [class.controls-disabled]="isHostedMode()">
+          <button type="button" class="secondary action-utility-btn" (click)="refreshOpenAiModels()"
+            [disabled]="refreshingOpenAi() || isHostedMode()">
             {{ refreshingOpenAi() ? 'Loading OpenAI...' : 'Refresh OpenAI models' }}
           </button>
-          <button type="button" class="secondary action-utility-btn" (click)="refreshClaudeModels()" [disabled]="refreshingClaude()">
+          <button type="button" class="secondary action-utility-btn" (click)="refreshClaudeModels()"
+            [disabled]="refreshingClaude() || isHostedMode()">
             {{ refreshingClaude() ? 'Loading Claude...' : 'Refresh Claude models' }}
           </button>
         </div>
 
-        <div class="form-grid" formGroupName="models">
+        <div class="form-grid" formGroupName="models" [class.controls-disabled]="isHostedMode()">
           <label>
             <span>OpenAI chat model</span>
-            <select formControlName="openaiChat">
+            <select formControlName="openaiChat" [disabled]="isHostedMode()">
               <option *ngFor="let model of openAiModels()" [value]="model">{{ model }}</option>
             </select>
           </label>
 
           <label class="field-with-tip">
             <span>OpenAI embedding model</span>
-            <button
-              type="button"
-              class="help-icon"
+            <button type="button" class="help-icon"
               title="Embedding models must stay compatible with the vectors already stored in the index. Changing the model family or size usually means you need a full reindex."
-              aria-label="Embedding model compatibility help"
-            >
+              aria-label="Embedding model compatibility help">
               i
             </button>
-            <select formControlName="openaiEmbeddings">
+            <select formControlName="openaiEmbeddings" [disabled]="isHostedMode()">
               <option *ngFor="let model of openAiModels()" [value]="model">{{ model }}</option>
             </select>
           </label>
 
           <label>
             <span>Claude chat model</span>
-            <select formControlName="claudeChat">
+            <select formControlName="claudeChat" [disabled]="isHostedMode()">
               <option *ngFor="let model of claudeModels()" [value]="model">{{ model }}</option>
             </select>
           </label>
 
           <label class="field-with-tip">
             <span>Claude embedding model</span>
-            <button
-              type="button"
-              class="help-icon"
+            <button type="button" class="help-icon"
               title="Embedding models must stay compatible with the vectors already stored in the index. Changing the model family or size usually means you need a full reindex."
-              aria-label="Embedding model compatibility help"
-            >
+              aria-label="Embedding model compatibility help">
               i
             </button>
-            <select formControlName="claudeEmbeddings">
+            <select formControlName="claudeEmbeddings" [disabled]="isHostedMode()">
               <option *ngFor="let model of claudeModels()" [value]="model">{{ model }}</option>
             </select>
           </label>
@@ -150,23 +267,12 @@
         </div>
 
         <div class="tab-row">
-          <button
-            type="button"
-            class="tab-btn"
-            *ngFor="let tab of widgetTabs()"
-            [class.active]="activeWidgetTab() === tab.id"
-            (click)="setActiveWidgetTab(tab.id)"
-          >
+          <button type="button" class="tab-btn" *ngFor="let tab of visibleWidgetTabs()"
+            [class.active]="activeWidgetTab() === tab.id" (click)="setActiveWidgetTab(tab.id)">
             {{ tab.label }}
           </button>
-          <button
-            type="button"
-            class="tab-btn tab-add-btn"
-            *ngIf="showWidgetUpgradeCta()"
-            (click)="openWidgetUpgrade()"
-            aria-label="Explore additional widget tabs"
-            title="Explore additional widget tabs"
-          >
+          <button type="button" class="tab-btn tab-add-btn" *ngIf="showWidgetUpgradeCta()" (click)="openWidgetUpgrade()"
+            aria-label="Explore additional widget tabs" title="Explore additional widget tabs">
             +
           </button>
         </div>
@@ -178,22 +284,24 @@
           </label>
 
           <section class="notice inline-notice" role="note">
-            To add the chatbot to a specific page or post, insert the shortcode <code>[myobserver_rag_widget]</code>.
-            You can also use the legacy <code>[rag_bot_widget]</code> shortcode or enable auto inject to load it in the footer.
+            To add the chatbot to a specific page or post, insert the shortcode
+            <code>[myobserver_rag_chat_shell]</code>.
+            You can also use the legacy <code>[rag_bot_chat_shell]</code> shortcode or enable auto inject to load it in
+            the footer.
           </section>
 
           <div class="stack" formGroupName="guardrails">
             <label>
               <span>Chat window title</span>
-              <input type="text" formControlName="chatTitle" />
+              <input type="text" formControlName="chatTitle" [disabled]="isHostedMode()" />
             </label>
 
             <label>
               <span>Welcome message</span>
-              <textarea rows="4" formControlName="welcomeMessage"></textarea>
+              <textarea rows="4" formControlName="welcomeMessage" [disabled]="isHostedMode()"></textarea>
             </label>
 
-            <label>
+            <label *ngIf="!isHostedMode()">
               <span>System prompt</span>
               <textarea rows="7" formControlName="systemPrompt"></textarea>
             </label>
@@ -203,137 +311,152 @@
         <ng-template #nonAssistantTab>
           <ng-container *ngIf="activeWidgetTab() === 'diagnostics'; else nonDiagnosticsTab">
             <div class="diagnostics-shell">
-            <section class="notice inline-notice" *ngIf="diagnosticsStatusMessage()" [class.success]="diagnosticsStatusTone() === 'success'" [class.error]="diagnosticsStatusTone() === 'error'">
-              {{ diagnosticsStatusMessage() }}
-            </section>
+              <section class="notice inline-notice" *ngIf="diagnosticsStatusMessage()"
+                [class.success]="diagnosticsStatusTone() === 'success'"
+                [class.error]="diagnosticsStatusTone() === 'error'">
+                {{ diagnosticsStatusMessage() }}
+              </section>
 
-            <div class="diagnostics-grid">
-              <article class="diag-card">
-                <p class="diag-label">Runtime</p>
-                <h4>{{ indexStats()?.status || 'checking' }}</h4>
-                <p>Local vector index health for this install.</p>
-              </article>
+              <div class="diagnostics-grid">
+                <article class="diag-card">
+                  <p class="diag-label">Runtime</p>
+                  <h4>{{ indexStats()?.status || 'checking' }}</h4>
+                  <p>Local vector index health for this install.</p>
+                </article>
 
-              <article class="diag-card">
-                <p class="diag-label">Products Indexed</p>
-                <h4>{{ indexStats()?.productsIndexed ?? 0 }}</h4>
-                <p>Current product vectors available to retrieval.</p>
-              </article>
+                <article class="diag-card">
+                  <p class="diag-label">Products Indexed</p>
+                  <h4>{{ indexStats()?.productsIndexed ?? 0 }}</h4>
+                  <p>Current product vectors available to retrieval.</p>
+                </article>
 
-              <article class="diag-card">
-                <p class="diag-label">Document Chunks</p>
-                <h4>{{ indexStats()?.documentVectors ?? 0 }}</h4>
-                <p>Active uploaded document vectors in the shared knowledge store.</p>
-              </article>
+                <article class="diag-card">
+                  <p class="diag-label">Document Chunks</p>
+                  <h4>{{ indexStats()?.documentVectors ?? 0 }}</h4>
+                  <p>Active uploaded document vectors in the shared knowledge store.</p>
+                </article>
 
-              <article class="diag-card">
-                <p class="diag-label">Total Active Vectors</p>
-                <h4>{{ indexStats()?.vectorsTotal ?? 0 }}</h4>
-                <p>Combined live product and document vectors available to retrieval.</p>
-              </article>
+                <article class="diag-card">
+                  <p class="diag-label">Total Active Vectors</p>
+                  <h4>{{ indexStats()?.vectorsTotal ?? 0 }}</h4>
+                  <p>Combined live product and document vectors available to retrieval.</p>
+                </article>
 
-              <article class="diag-card">
-                <p class="diag-label">Index Storage</p>
-                <h4>{{ formatBytes(indexStats()?.storageBytes ?? 0) }}</h4>
-                <p>Combined vector, graph, metadata, and payload size.</p>
-              </article>
-            </div>
-
-            <div class="actions-row">
-              <button type="button" class="secondary action-utility-btn" (click)="refreshIndexStats()" [disabled]="indexStatsLoading()">
-                {{ indexStatsLoading() ? 'Refreshing...' : 'Refresh stats' }}
-              </button>
-            </div>
-
-            <div class="diag-breakdown" *ngIf="indexStats() as stats">
-              <div><strong>Vector:</strong> {{ formatBytes(stats.files.vector) }}</div>
-              <div><strong>Graph:</strong> {{ formatBytes(stats.files.graph) }}</div>
-              <div><strong>Meta:</strong> {{ formatBytes(stats.files.meta) }}</div>
-              <div><strong>Payload:</strong> {{ formatBytes(stats.files.payload) }}</div>
-            </div>
-
-            <div class="diag-tester">
-              <div class="panel-head panel-head-tight">
-                <div>
-                  <p class="eyebrow">Diagnostic Test</p>
-                  <h3>Run Retrieval Diagnostics</h3>
-                </div>
+                <article class="diag-card">
+                  <p class="diag-label">Index Storage</p>
+                  <h4>{{ formatBytes(indexStats()?.storageBytes ?? 0) }}</h4>
+                  <p>Combined vector, graph, metadata, and payload size.</p>
+                </article>
               </div>
 
-              <div class="stack">
-                <label>
-                  <span>Test query</span>
-                  <textarea rows="3" [value]="diagnosticsQuery()" (input)="setDiagnosticsQuery($any($event.target).value)" placeholder="Example: waterproof jacket for winter hiking"></textarea>
-                </label>
-
-                <label>
-                  <span>Search mode</span>
-                  <select [value]="diagnosticsMode()" (change)="setDiagnosticsMode($any($event.target).value)">
-                    <option value="hybrid">Hybrid</option>
-                    <option value="vector">Vector</option>
-                    <option value="keyword">Keyword</option>
-                  </select>
-                </label>
-              </div>
+              <section class="notice inline-notice" *ngIf="indexingStatusMessage()"
+                [class.success]="indexingStatusTone() === 'success'" [class.error]="indexingStatusTone() === 'error'">
+                {{ indexingStatusMessage() }}
+              </section>
 
               <div class="actions-row">
-                <button type="button" class="primary" (click)="runDiagnostics()" [disabled]="diagnosticsLoading()">
-                  {{ diagnosticsLoading() ? 'Running...' : 'Run diagnostic test' }}
+                <button type="button" class="secondary action-utility-btn" (click)="refreshIndexStats()"
+                  [disabled]="indexStatsLoading()">
+                  {{ indexStatsLoading() ? 'Refreshing...' : 'Refresh stats' }}
                 </button>
-                <span class="diag-latency" *ngIf="diagnosticsLatency() !== null">
-                  {{ diagnosticsLatency() }} ms
-                </span>
+                <button type="button" class="primary action-utility-btn" *ngIf="!isHostedMode()" (click)="queueIndex()"
+                  [disabled]="queueing()">
+                  {{ queueing() ? 'Queueing...' : 'Index all products' }}
+                </button>
               </div>
 
-              <div
-                class="diag-results-drawer"
-                *ngIf="diagnosticsResults().length"
-                [class.open]="diagnosticsResultsOpen()"
-                [attr.aria-hidden]="!diagnosticsResultsOpen()"
-              >
-                <div class="diag-results-head">
+              <div class="diag-breakdown" *ngIf="indexStats() as stats">
+                <div><strong>Vector:</strong> {{ formatBytes(stats.files.vector) }}</div>
+                <div><strong>Graph:</strong> {{ formatBytes(stats.files.graph) }}</div>
+                <div><strong>Meta:</strong> {{ formatBytes(stats.files.meta) }}</div>
+                <div><strong>Payload:</strong> {{ formatBytes(stats.files.payload) }}</div>
+              </div>
+
+              <div class="diag-tester">
+                <div class="panel-head panel-head-tight">
                   <div>
-                    <p class="eyebrow">Diagnostic Results</p>
-                    <h4>{{ diagnosticsResults().length }} ranked match{{ diagnosticsResults().length === 1 ? '' : 'es' }}</h4>
+                    <p class="eyebrow">Diagnostic Test</p>
+                    <h3>Run Retrieval Diagnostics</h3>
                   </div>
-                  <button type="button" class="diag-close-btn" (click)="closeDiagnosticsResults()" aria-label="Close diagnostic results">
-                    Close
+                </div>
+
+                <div class="stack">
+                  <section class="notice inline-notice" *ngIf="isHostedMode()" role="note">
+                    Diagnostic test is disabled while hosted mode is active.
+                  </section>
+
+                  <label>
+                    <span>Test query</span>
+                    <textarea rows="3" [value]="diagnosticsQuery()"
+                      (input)="setDiagnosticsQuery($any($event.target).value)"
+                      placeholder="Example: waterproof jacket for winter hiking" [disabled]="isHostedMode()"></textarea>
+                  </label>
+
+                  <label>
+                    <span>Search mode</span>
+                    <select [value]="diagnosticsMode()" (change)="setDiagnosticsMode($any($event.target).value)"
+                      [disabled]="isHostedMode()">
+                      <option value="hybrid">Hybrid</option>
+                      <option value="vector">Vector</option>
+                      <option value="keyword">Keyword</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="actions-row">
+                  <button type="button" class="primary" (click)="runDiagnostics()"
+                    [disabled]="diagnosticsLoading() || isHostedMode()">
+                    {{ diagnosticsLoading() ? 'Running...' : 'Run diagnostic test' }}
                   </button>
+                  <span class="diag-latency" *ngIf="diagnosticsLatency() !== null">
+                    {{ diagnosticsLatency() }} ms
+                  </span>
                 </div>
 
-                <div class="diag-results-scroll">
-                  <article class="diag-result" *ngFor="let result of diagnosticsResults()">
-                    <div class="diag-result-head">
-                      <h4>{{ result.title }}</h4>
-                      <span class="diag-score">{{ result.score }}</span>
+                <div class="diag-results-drawer" *ngIf="diagnosticsResults().length"
+                  [class.open]="diagnosticsResultsOpen()" [attr.aria-hidden]="!diagnosticsResultsOpen()">
+                  <div class="diag-results-head">
+                    <div>
+                      <p class="eyebrow">Diagnostic Results</p>
+                      <h4>{{ diagnosticsResults().length }} ranked match{{ diagnosticsResults().length === 1 ? '' : 'es'
+                        }}</h4>
                     </div>
-                    <p class="diag-meta">
-                      Product #{{ result.productId }} · Distance {{ result.distance }} · Vector {{ result.vectorRank ?? '—' }} · Keyword {{ result.keywordRank ?? '—' }}
-                    </p>
-                    <p>{{ result.matchedChunk }}</p>
-                  </article>
-                </div>
-              </div>
+                    <button type="button" class="diag-close-btn" (click)="closeDiagnosticsResults()"
+                      aria-label="Close diagnostic results">
+                      Close
+                    </button>
+                  </div>
 
-              <ng-template #noDiagnosticResults>
-                <p class="empty-state" *ngIf="diagnosticsHasRun(); else diagnosticsStartState">
-                  No matching products were returned for that query and search mode.
-                </p>
-                <ng-template #diagnosticsStartState>
-                  <p class="empty-state">Run a diagnostic query to preview how core retrieval is ranking products.</p>
+                  <div class="diag-results-scroll">
+                    <article class="diag-result" *ngFor="let result of diagnosticsResults()">
+                      <div class="diag-result-head">
+                        <h4>{{ result.title }}</h4>
+                        <span class="diag-score">{{ result.score }}</span>
+                      </div>
+                      <p class="diag-meta">
+                        Product #{{ result.productId }} · Distance {{ result.distance }} · Vector {{ result.vectorRank
+                        ?? '—' }} · Keyword {{ result.keywordRank ?? '—' }}
+                      </p>
+                      <p>{{ result.matchedChunk }}</p>
+                    </article>
+                  </div>
+                </div>
+
+                <ng-template #noDiagnosticResults>
+                  <p class="empty-state" *ngIf="diagnosticsHasRun(); else diagnosticsStartState">
+                    No matching products were returned for that query and search mode.
+                  </p>
+                  <ng-template #diagnosticsStartState>
+                    <p class="empty-state">Run a diagnostic query to preview how core retrieval is ranking products.</p>
+                  </ng-template>
                 </ng-template>
-              </ng-template>
-            </div>
+              </div>
             </div>
           </ng-container>
         </ng-template>
 
         <ng-template #nonDiagnosticsTab>
           <ng-container *ngIf="activeWidgetTab() === 'safety'; else externalWidgetTab">
-            <section class="notice inline-notice" *ngIf="indexingStatusMessage()" [class.success]="indexingStatusTone() === 'success'" [class.error]="indexingStatusTone() === 'error'">
-              {{ indexingStatusMessage() }}
-            </section>
-
             <div class="stack compact" formGroupName="guardrails">
               <label class="toggle-row">
                 <input type="checkbox" formControlName="maskPII" />
@@ -374,7 +497,8 @@
           <span class="badge">Upload workflow</span>
         </div>
 
-        <section class="notice inline-notice" *ngIf="uploadStatusMessage()" [class.success]="uploadStatusTone() === 'success'" [class.error]="uploadStatusTone() === 'error'">
+        <section class="notice inline-notice" *ngIf="uploadStatusMessage()"
+          [class.success]="uploadStatusTone() === 'success'" [class.error]="uploadStatusTone() === 'error'">
           {{ uploadStatusMessage() }}
         </section>
 
@@ -382,30 +506,38 @@
           <div class="upload-dropzone">
             <p class="upload-title">Drop documents here or browse to upload.</p>
             <p class="upload-copy">
-              Add store policies, fit guides, warranty notes, FAQs, and support docs so Woo-RAG can answer beyond the raw product catalog.
+              Add store policies, fit guides, warranty notes, FAQs, and support docs so Woo-RAG can answer beyond the
+              raw product catalog.
             </p>
             <label>
               <span>Document title</span>
-              <input type="text" [value]="documentTitle()" (input)="setDocumentTitle($any($event.target).value)" placeholder="Optional title override" />
+              <input type="text" [value]="documentTitle()" (input)="setDocumentTitle($any($event.target).value)"
+                placeholder="Optional title override" />
             </label>
             <div class="chip-row">
               <span class="type-chip" *ngFor="let type of acceptedDocumentTypes">{{ type }}</span>
             </div>
             <div class="actions-row">
-              <button type="button" class="primary ghostish" (click)="browseForDocument()" [disabled]="uploadingDocument()">
+              <button type="button" class="primary ghostish" (click)="browseForDocument()"
+                [disabled]="uploadingDocument()">
                 {{ uploadingDocument() ? 'Uploading...' : 'Choose files' }}
               </button>
             </div>
-            <input #documentFileInput type="file" hidden accept=".txt,.csv,.docx,.pdf,.md" (change)="uploadSelectedDocument($event)" />
+            <input #documentFileInput type="file" hidden accept=".txt,.csv,.docx,.pdf,.md"
+              (change)="uploadSelectedDocument($event)" />
           </div>
 
           <div class="upload-sidecard">
             <h4>How document uploads should be used</h4>
-            <p>Upload real store knowledge that helps answer shopper questions more clearly than product descriptions alone.</p>
+            <p>Upload real store knowledge that helps answer shopper questions more clearly than product descriptions
+              alone.</p>
             <ul class="mini-list">
-              <li>Use TXT, CSV, DOCX, or text-based PDF files for policies, fit guides, care instructions, warranties, FAQs, and support notes.</li>
-              <li>Link a document to specific products when the content is product-specific, or leave it unlinked when it should help across the whole store.</li>
-              <li>After upload, the file is processed into searchable chunks so chat can use both product data and document context in the same answer.</li>
+              <li>Use TXT, CSV, DOCX, or text-based PDF files for policies, fit guides, care instructions, warranties,
+                FAQs, and support notes.</li>
+              <li>Link a document to specific products when the content is product-specific, or leave it unlinked when
+                it should help across the whole store.</li>
+              <li>After upload, the file is processed into searchable chunks so chat can use both product data and
+                document context in the same answer.</li>
             </ul>
           </div>
         </div>
@@ -420,19 +552,22 @@
           <span class="badge">Preview section</span>
         </div>
 
-        <section class="notice inline-notice" *ngIf="libraryStatusMessage()" [class.success]="libraryStatusTone() === 'success'" [class.error]="libraryStatusTone() === 'error'">
+        <section class="notice inline-notice" *ngIf="libraryStatusMessage()"
+          [class.success]="libraryStatusTone() === 'success'" [class.error]="libraryStatusTone() === 'error'">
           {{ libraryStatusMessage() }}
         </section>
 
         <div class="queue-head">
           <div class="queue-summary">
-            <p>Review uploaded files, check their status, and open any document to inspect or adjust its linked products.</p>
+            <p>Review uploaded files, check their status, and open any document to inspect or adjust its linked
+              products.</p>
             <span class="doc-total">{{ totalDocuments() }} total documents</span>
           </div>
         </div>
 
         <div class="document-empty" *ngIf="!documentsLoading() && documents().length === 0">
-          No documents uploaded yet. Upload a TXT, CSV, DOCX, or PDF file to start building the Product Intelligence Engine.
+          No documents uploaded yet. Upload a TXT, CSV, DOCX, or PDF file to start building the Product Intelligence
+          Engine.
         </div>
 
         <div class="document-queue" #documentQueue *ngIf="documents().length > 0">
@@ -447,41 +582,30 @@
             <p>Updated {{ relativeUpdatedText(doc.updated_at) }}</p>
             <div class="actions-row document-actions">
               <button type="button" class="document-action-btn" (click)="openReviewLinks(doc.id)">Review links</button>
-              <button type="button" class="document-action-btn" (click)="reindexDocument(doc.id)" [disabled]="reindexingDocumentId() === doc.id">
+              <button type="button" class="document-action-btn" (click)="reindexDocument(doc.id)"
+                [disabled]="reindexingDocumentId() === doc.id">
                 {{ reindexingDocumentId() === doc.id ? 'Queueing...' : 'Reindex' }}
               </button>
-              <button type="button" class="document-action-btn document-action-danger" (click)="confirmDeleteDocument(doc.id)">Delete</button>
+              <button type="button" class="document-action-btn document-action-danger"
+                (click)="confirmDeleteDocument(doc.id)">Delete</button>
             </div>
           </article>
         </div>
 
         <div class="queue-pager" *ngIf="documents().length > 0">
-          <button
-            type="button"
-            class="secondary queue-btn"
-            (click)="scrollDocumentQueue('left')"
-            [disabled]="currentQueuePage() === 0"
-          >
+          <button type="button" class="secondary queue-btn" (click)="scrollDocumentQueue('left')"
+            [disabled]="currentQueuePage() === 0">
             ←
           </button>
 
           <div class="queue-dots" aria-label="Document pages">
-            <button
-              type="button"
-              class="queue-dot"
-              *ngFor="let doc of documents(); let i = index"
-              [class.active]="currentQueuePage() === i"
-              (click)="scrollDocumentQueueToPage(i)"
-              [attr.aria-label]="'Go to document ' + (i + 1)"
-            ></button>
+            <button type="button" class="queue-dot" *ngFor="let doc of documents(); let i = index"
+              [class.active]="currentQueuePage() === i" (click)="scrollDocumentQueueToPage(i)"
+              [attr.aria-label]="'Go to document ' + (i + 1)"></button>
           </div>
 
-          <button
-            type="button"
-            class="secondary queue-btn"
-            (click)="scrollDocumentQueue('right')"
-            [disabled]="currentQueuePage() === documents().length - 1"
-          >
+          <button type="button" class="secondary queue-btn" (click)="scrollDocumentQueue('right')"
+            [disabled]="currentQueuePage() === documents().length - 1">
             →
           </button>
         </div>
@@ -506,16 +630,19 @@
       </div>
 
       <div class="modal-body">
-        <section class="notice inline-notice" *ngIf="modalStatusMessage()" [class.success]="modalStatusTone() === 'success'" [class.error]="modalStatusTone() === 'error'">
+        <section class="notice inline-notice" *ngIf="modalStatusMessage()"
+          [class.success]="modalStatusTone() === 'success'" [class.error]="modalStatusTone() === 'error'">
           {{ modalStatusMessage() }}
         </section>
 
         <div class="modal-section">
           <p class="modal-label">Document</p>
           <h4>{{ selectedDocument()?.title }}</h4>
-          <p class="modal-copy">Review the products already connected to this document, then add another product if the content should help answer product-specific questions.</p>
+          <p class="modal-copy">Review the products already connected to this document, then add another product if the
+            content should help answer product-specific questions.</p>
           <div class="actions-row">
-            <button type="button" class="secondary" (click)="confirmDeleteDocument(selectedDocument()!.id)">Delete document</button>
+            <button type="button" class="secondary" (click)="confirmDeleteDocument(selectedDocument()!.id)">Delete
+              document</button>
           </div>
         </div>
 
@@ -524,7 +651,8 @@
           <div class="linked-list linked-list-scroll" *ngIf="linkedProducts().length; else noLinksState">
             <div class="linked-item" *ngFor="let product of linkedProducts()">
               <span>{{ product.name }}</span>
-              <button type="button" class="secondary remove-btn" (click)="removeLinkedProduct(product.id)">Remove</button>
+              <button type="button" class="secondary remove-btn"
+                (click)="removeLinkedProduct(product.id)">Remove</button>
             </div>
           </div>
           <ng-template #noLinksState>
@@ -535,7 +663,8 @@
         <div class="modal-section">
           <p class="modal-label">Link another product</p>
           <div class="link-row">
-            <input type="text" [value]="productSearchQuery()" (input)="setProductSearchQuery($any($event.target).value)" placeholder="Search products by name or SKU" />
+            <input type="text" [value]="productSearchQuery()" (input)="setProductSearchQuery($any($event.target).value)"
+              placeholder="Search products by name or SKU" />
             <button type="button" class="secondary" (click)="searchProducts()" [disabled]="productSearchLoading()">
               {{ productSearchLoading() ? 'Searching...' : 'Search' }}
             </button>
@@ -543,9 +672,11 @@
           <div class="link-row">
             <select [value]="productToLink()" (change)="setProductToLink($any($event.target).value)">
               <option value="">Search existing products</option>
-              <option *ngFor="let product of availableProducts()" [value]="product.id">{{ product.name }}{{ product.sku ? ' (' + product.sku + ')' : '' }}</option>
+              <option *ngFor="let product of availableProducts()" [value]="product.id">{{ product.name }}{{ product.sku
+                ? ' (' + product.sku + ')' : '' }}</option>
             </select>
-            <button type="button" class="primary" (click)="addLinkedProduct()" [disabled]="productSearchLoading()">Link product</button>
+            <button type="button" class="primary" (click)="addLinkedProduct()" [disabled]="productSearchLoading()">Link
+              product</button>
           </div>
           <p class="picker-note">This dropdown is now backed by the existing WooCommerce product catalog.</p>
         </div>
@@ -569,7 +700,8 @@
         <p class="modal-label">Document</p>
         <h4>{{ pendingDeleteDocument()?.title }}</h4>
         <p class="modal-copy">
-          This will remove the uploaded file, linked chunks, and product links for this document from the Product Intelligence Engine.
+          This will remove the uploaded file, linked chunks, and product links for this document from the Product
+          Intelligence Engine.
         </p>
       </div>
 

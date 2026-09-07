@@ -2,6 +2,7 @@ import { InjectionToken } from '@angular/core';
 
 export interface SettingsUiConfig {
   version: string;
+  previewMode?: boolean;
   mount: {
     elementTag: string;
     targetId: string;
@@ -24,6 +25,10 @@ export interface SettingsUiConfig {
     load: string;
     save: string;
     queueIndex: string;
+    validateHostedApi: string;
+    registerHostedSite: string;
+    refreshHostedStatus: string;
+    runHostedSync: string;
     openAiModels: string;
     claudeModels: string;
   };
@@ -31,6 +36,10 @@ export interface SettingsUiConfig {
     load: string;
     save: string;
     queueIndex: string;
+    validateHostedApi: string;
+    registerHostedSite: string;
+    refreshHostedStatus: string;
+    runHostedSync: string;
     openAiModels: string;
     claudeModels: string;
   };
@@ -49,6 +58,7 @@ declare global {
 
 const fallbackConfig: SettingsUiConfig = {
   version: 'dev',
+  previewMode: false,
   mount: {
     elementTag: 'myobserver-rag-settings-ui',
     targetId: 'myobserver-rag-settings-root',
@@ -71,6 +81,10 @@ const fallbackConfig: SettingsUiConfig = {
     load: 'myobserver_rag_get_settings',
     save: 'myobserver_rag_save_settings',
     queueIndex: 'myobserver_rag_queue_index',
+    validateHostedApi: 'myobserver_rag_validate_hosted_api',
+    registerHostedSite: 'myobserver_rag_register_hosted_site',
+    refreshHostedStatus: 'myobserver_rag_refresh_hosted_status',
+    runHostedSync: 'myobserver_rag_run_hosted_sync',
     openAiModels: 'myobserver_rag_list_openai_models',
     claudeModels: 'myobserver_rag_list_claude_models',
   },
@@ -78,6 +92,10 @@ const fallbackConfig: SettingsUiConfig = {
     load: 'dev',
     save: 'dev',
     queueIndex: 'dev',
+    validateHostedApi: 'dev',
+    registerHostedSite: 'dev',
+    refreshHostedStatus: 'dev',
+    runHostedSync: 'dev',
     openAiModels: 'dev',
     claudeModels: 'dev',
   },

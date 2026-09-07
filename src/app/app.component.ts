@@ -2,11 +2,11 @@ import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, ElementRef, OnDestroy, ViewChild, ViewEncapsulation, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { finalize } from 'rxjs';
+import { catchError, EMPTY, filter, finalize, Subscription, switchMap, timer } from 'rxjs';
 import { SettingsApiService } from './settings-api.service';
 import { SETTINGS_UI_CONFIG } from './settings-config.token';
 import { SettingsUiExtensionsService } from './settings-ui-extensions.service';
-import { DocumentItem, IndexStatsResponse, ProductLinkItem, RetrievalDiagnosticResult, SettingsPayload, SettingsUiShellTab } from './settings.models';
+import { DocumentItem, HostedActivationStatus, HostedApiCapabilities, IndexStatsResponse, ProductLinkItem, RetrievalDiagnosticResult, SettingsPayload, SettingsUiShellTab } from './settings.models';
 
 @Component({
   selector: 'myobserver-rag-settings-ui',
@@ -17,12 +17,14 @@ import { DocumentItem, IndexStatsResponse, ProductLinkItem, RetrievalDiagnosticR
   encapsulation: ViewEncapsulation.ShadowDom,
 })
 export class AppComponent {
+  private hostedUsageSubscription?: Subscription;
   private readonly fb = inject(FormBuilder);
   private readonly api = inject(SettingsApiService);
   private readonly extensions = inject(SettingsUiExtensionsService);
   protected readonly config = inject(SETTINGS_UI_CONFIG);
   private readonly statusTimeouts = new Map<string, number>();
   private documentRefreshTimeoutId: number | null = null;
+  private runtimeModeSubscription?: Subscription;
 
   protected readonly loading = signal(true);
   protected readonly saving = signal(false);
@@ -41,7 +43,16 @@ export class AppComponent {
   protected readonly libraryStatusTone = signal<'neutral' | 'success' | 'error'>('neutral');
   protected readonly modalStatusMessage = signal('');
   protected readonly modalStatusTone = signal<'neutral' | 'success' | 'error'>('neutral');
+  protected readonly hostedApiStatusMessage = signal('');
+  protected readonly hostedApiStatusTone = signal<'neutral' | 'success' | 'error'>('neutral');
   protected readonly currentSettings = signal<SettingsPayload | null>(null);
+  protected readonly hostedApiCapabilities = signal<HostedApiCapabilities | null>(null);
+  protected readonly hostedApiCapabilitiesUrl = signal('');
+  protected readonly hostedActivation = signal<HostedActivationStatus | null>(null);
+  protected readonly validatingHostedApi = signal(false);
+  protected readonly registeringHostedSite = signal(false);
+  protected readonly refreshingHostedStatus = signal(false);
+  protected readonly syncingHostedCatalog = signal(false);
   protected readonly openAiModels = signal<string[]>([]);
   protected readonly claudeModels = signal<string[]>([]);
   protected readonly refreshingOpenAi = signal(false);
@@ -83,6 +94,7 @@ export class AppComponent {
   @ViewChild('externalWidgetTabHost') private externalWidgetTabHost?: ElementRef<HTMLElement>;
 
   protected readonly form = this.fb.nonNullable.group({
+    runtimeMode: 'local' as 'local' | 'saas',
     providers: this.fb.nonNullable.group({
       chat: 'openai' as 'openai' | 'claude',
       embeddings: 'openai' as 'openai' | 'claude',
@@ -98,6 +110,8 @@ export class AppComponent {
       claudeEmbeddings: 'claude-embedding-v1',
     }),
     claudeEmbeddingsUrl: '',
+    hostedApiBaseUrl: '',
+    saasRegisterUrl: '',
     widgetAutoInject: false,
     guardrails: this.fb.nonNullable.group({
       chatTitle: 'Woo Rag Assistant',
@@ -111,10 +125,19 @@ export class AppComponent {
   });
 
   constructor() {
+    this.runtimeModeSubscription = this.form.controls.runtimeMode.valueChanges.subscribe(() => {
+      this.ensureActiveWidgetTabVisible();
+    });
     this.load();
+    this.hostedUsageSubscription = timer(60000, 60000).pipe(
+      filter(() => this.isHostedMode() && !this.loading()),
+      switchMap(() => this.api.loadSettings().pipe(catchError(() => EMPTY))),
+    ).subscribe((settings) => this.hostedActivation.set(settings.hosted));
   }
 
   ngOnDestroy(): void {
+    this.hostedUsageSubscription?.unsubscribe();
+    this.runtimeModeSubscription?.unsubscribe();
     this.clearDocumentRefreshTimer();
   }
 
@@ -126,13 +149,17 @@ export class AppComponent {
       .subscribe({
         next: (settings) => {
           this.currentSettings.set(settings);
+          this.hostedActivation.set(settings.hosted);
           this.openAiModels.set(this.uniqueModels([settings.models.openaiChat, settings.models.openaiEmbeddings]));
           this.claudeModels.set(this.uniqueModels([settings.models.claudeChat, settings.models.claudeEmbeddings]));
           this.form.reset({
+            runtimeMode: settings.runtimeMode,
             providers: settings.providers,
             keys: settings.keys,
             models: settings.models,
             claudeEmbeddingsUrl: settings.claudeEmbeddingsUrl,
+            hostedApiBaseUrl: settings.hostedApiBaseUrl,
+            saasRegisterUrl: settings.saasRegisterUrl,
             widgetAutoInject: settings.widgetAutoInject,
             guardrails: settings.guardrails,
           });
@@ -167,12 +194,16 @@ export class AppComponent {
       .subscribe({
         next: (response) => {
           this.currentSettings.set(response.settings);
+          this.hostedActivation.set(response.settings.hosted);
           this.setStatus(response.message, 'success', 'global');
           this.form.reset({
+            runtimeMode: response.settings.runtimeMode,
             providers: response.settings.providers,
             keys: response.settings.keys,
             models: response.settings.models,
             claudeEmbeddingsUrl: response.settings.claudeEmbeddingsUrl,
+            hostedApiBaseUrl: response.settings.hostedApiBaseUrl,
+            saasRegisterUrl: response.settings.saasRegisterUrl,
             widgetAutoInject: response.settings.widgetAutoInject,
             guardrails: response.settings.guardrails,
           });
@@ -227,6 +258,128 @@ export class AppComponent {
     return new Date().getFullYear();
   }
 
+  protected isHostedMode(): boolean {
+    return this.form.controls.runtimeMode.value === 'saas';
+  }
+
+  protected modePillReady(): boolean {
+    if (!this.isHostedMode()) {
+      return true;
+    }
+
+    const hosted = this.hostedActivation();
+    if (!hosted) {
+      return false;
+    }
+
+    if (hosted.access?.runtimeEnabled) {
+      return true;
+    }
+
+    return hosted.bootstrapStatus === 'verified' && hosted.apiTokenConfigured && hosted.siteId !== '';
+  }
+
+  protected visibleWidgetTabs(): SettingsUiShellTab[] {
+    if (!this.isHostedMode()) {
+      return this.widgetTabs();
+    }
+
+    return this.widgetTabs().filter((tab) => tab.id !== 'diagnostics' && tab.id !== 'safety');
+  }
+
+  protected checkHostedApi(): void {
+    const baseUrl = this.form.controls.hostedApiBaseUrl.value.trim();
+    if (baseUrl === '') {
+      this.hostedApiCapabilities.set(null);
+      this.hostedApiCapabilitiesUrl.set('');
+      this.setStatus('Enter a hosted API base URL first.', 'error', 'hostedApi');
+      return;
+    }
+
+    this.validatingHostedApi.set(true);
+    this.setStatus('Checking hosted API capabilities...', 'neutral', 'hostedApi');
+    this.api.validateHostedApi(baseUrl)
+      .pipe(finalize(() => this.validatingHostedApi.set(false)))
+      .subscribe({
+        next: (response) => {
+          this.hostedApiCapabilities.set(response.capabilities);
+          this.hostedApiCapabilitiesUrl.set(response.capabilitiesUrl);
+          const runtimeLabel = response.capabilities.runtime.enabled ? 'runtime-ready' : 'billing-only';
+          this.setStatus(`Hosted API check complete: ${response.capabilities.service || 'remote service'} is ${runtimeLabel}.`, 'success', 'hostedApi');
+        },
+        error: (error) => {
+          this.hostedApiCapabilities.set(null);
+          this.hostedApiCapabilitiesUrl.set('');
+          this.setError(error, 'Could not validate hosted API capabilities.', 'hostedApi');
+        },
+      });
+  }
+
+  protected registerHostedSite(): void {
+    const baseUrl = this.form.controls.hostedApiBaseUrl.value.trim();
+    const registerUrl = this.form.controls.saasRegisterUrl.value.trim();
+    if (baseUrl === '' && registerUrl === '') {
+      this.setStatus('Enter a hosted API base URL first.', 'error', 'hostedApi');
+      return;
+    }
+
+    this.registeringHostedSite.set(true);
+    this.setStatus('Registering this store with the hosted API...', 'neutral', 'hostedApi');
+    this.api.registerHostedSite(baseUrl, registerUrl)
+      .pipe(finalize(() => this.registeringHostedSite.set(false)))
+      .subscribe({
+        next: (response) => {
+          this.currentSettings.set(response.settings);
+          this.hostedActivation.set(response.hosted);
+          this.form.patchValue({
+            hostedApiBaseUrl: response.settings.hostedApiBaseUrl,
+            saasRegisterUrl: response.settings.saasRegisterUrl,
+          });
+          this.setStatus(response.message, 'success', 'hostedApi');
+        },
+        error: (error) => this.setError(error, 'Could not register this site with the hosted API.', 'hostedApi'),
+      });
+  }
+
+  protected refreshHostedStatus(): void {
+    const baseUrl = this.form.controls.hostedApiBaseUrl.value.trim();
+    const registerUrl = this.form.controls.saasRegisterUrl.value.trim();
+    this.refreshingHostedStatus.set(true);
+    this.setStatus('Refreshing hosted runtime status...', 'neutral', 'hostedApi');
+    this.api.refreshHostedStatus(baseUrl, registerUrl)
+      .pipe(finalize(() => this.refreshingHostedStatus.set(false)))
+      .subscribe({
+        next: (response) => {
+          this.currentSettings.set(response.settings);
+          this.hostedActivation.set(response.hosted);
+          this.setStatus(response.message, 'success', 'hostedApi');
+        },
+        error: (error) => this.setError(error, 'Could not refresh hosted status.', 'hostedApi'),
+      });
+  }
+
+  protected runHostedSync(): void {
+    const baseUrl = this.form.controls.hostedApiBaseUrl.value.trim();
+    const registerUrl = this.form.controls.saasRegisterUrl.value.trim();
+    if (!baseUrl) {
+      this.setStatus('Enter a hosted API base URL first.', 'error', 'hostedApi');
+      return;
+    }
+
+    this.syncingHostedCatalog.set(true);
+    this.setStatus('Running hosted catalog sync...', 'neutral', 'hostedApi');
+    this.api.runHostedSync(baseUrl, registerUrl)
+      .pipe(finalize(() => this.syncingHostedCatalog.set(false)))
+      .subscribe({
+        next: (response) => {
+          this.currentSettings.set(response.settings);
+          this.hostedActivation.set(response.hosted);
+          this.setStatus(response.message, 'success', 'hostedApi');
+        },
+        error: (error) => this.setError(error, 'Could not run hosted catalog sync.', 'hostedApi'),
+      });
+  }
+
   protected setActiveWidgetTab(tabId: string): void {
     this.activeWidgetTab.set(tabId);
 
@@ -243,6 +396,15 @@ export class AppComponent {
 
   protected showWidgetUpgradeCta(): boolean {
     return !this.widgetTabs().some((tab) => tab.id === 'chat-analytics');
+  }
+
+  private ensureActiveWidgetTabVisible(): void {
+    const activeTab = this.activeWidgetTab();
+    const isHostedHiddenTab = this.isHostedMode() && (activeTab === 'diagnostics' || activeTab === 'safety');
+
+    if (isHostedHiddenTab) {
+      this.activeWidgetTab.set('assistant');
+    }
   }
 
   protected openWidgetUpgrade(): void {
@@ -365,6 +527,12 @@ export class AppComponent {
   }
 
   protected runDiagnostics(): void {
+    if (this.isHostedMode()) {
+      this.diagnosticsResultsOpen.set(false);
+      this.setStatus('Diagnostic test is disabled while hosted mode is active.', 'error', 'diagnostics');
+      return;
+    }
+
     const query = this.diagnosticsQuery().trim();
     if (query === '') {
       this.diagnosticsResultsOpen.set(false);
@@ -662,7 +830,7 @@ export class AppComponent {
       });
   }
 
-  private setStatus(message: string, tone: 'neutral' | 'success' | 'error', scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal' = 'global'): void {
+  private setStatus(message: string, tone: 'neutral' | 'success' | 'error', scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal' | 'hostedApi' = 'global'): void {
     const normalized = String(message || '');
     this.clearStatusTimeout(scope);
     switch (scope) {
@@ -696,6 +864,11 @@ export class AppComponent {
         this.modalStatusTone.set(tone);
         this.scheduleStatusClear(scope, normalized);
         return;
+      case 'hostedApi':
+        this.hostedApiStatusMessage.set(normalized);
+        this.hostedApiStatusTone.set(tone);
+        this.scheduleStatusClear(scope, normalized);
+        return;
       default:
         this.statusMessage.set(normalized);
         this.statusTone.set(tone);
@@ -703,14 +876,14 @@ export class AppComponent {
     }
   }
 
-  private setError(error: unknown, fallback: string, scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal' = 'global'): void {
+  private setError(error: unknown, fallback: string, scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal' | 'hostedApi' = 'global'): void {
     const message = error instanceof HttpErrorResponse
       ? (error.error?.data?.message ?? error.error?.message ?? fallback)
       : fallback;
     this.setStatus(String(message || fallback), 'error', scope);
   }
 
-  private scheduleStatusClear(scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal', message: string): void {
+  private scheduleStatusClear(scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal' | 'hostedApi', message: string): void {
     if (message === '') {
       return;
     }
@@ -722,7 +895,7 @@ export class AppComponent {
     this.statusTimeouts.set(scope, timeoutId);
   }
 
-  private clearStatusTimeout(scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal'): void {
+  private clearStatusTimeout(scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal' | 'hostedApi'): void {
     const timeoutId = this.statusTimeouts.get(scope);
     if (timeoutId !== undefined) {
       window.clearTimeout(timeoutId);
@@ -730,7 +903,7 @@ export class AppComponent {
     }
   }
 
-  private clearStatus(scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal'): void {
+  private clearStatus(scope: 'global' | 'models' | 'diagnostics' | 'indexing' | 'upload' | 'library' | 'modal' | 'hostedApi'): void {
     switch (scope) {
       case 'models':
         this.modelsStatusMessage.set('');
@@ -749,6 +922,9 @@ export class AppComponent {
         return;
       case 'modal':
         this.modalStatusMessage.set('');
+        return;
+      case 'hostedApi':
+        this.hostedApiStatusMessage.set('');
         return;
       default:
         this.statusMessage.set('');

@@ -133,6 +133,20 @@
   overflow: hidden;
 }
 
+.panel-disabled {
+  position: relative;
+  background: linear-gradient(180deg, rgba(245, 247, 250, 0.96), rgba(255, 255, 255, 0.88));
+}
+
+.controls-disabled {
+  opacity: 0.58;
+}
+
+.controls-disabled,
+.controls-disabled * {
+  pointer-events: none;
+}
+
 .panel-wide {
   grid-column: 1 / -1;
 }

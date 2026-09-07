@@ -10,6 +10,9 @@ import {
   DocumentReindexResponse,
   DocumentsResponse,
   DocumentUploadResponse,
+  HostedApiCapabilities,
+  HostedActivationStatus,
+  HostedSyncStatus,
   IndexStatsResponse,
   ProductLinkItem,
   ProductSearchResponse,
@@ -27,8 +30,8 @@ interface AjaxEnvelope<T> {
 export class SettingsApiService {
   private readonly http = inject(HttpClient);
   private readonly config = inject(SETTINGS_UI_CONFIG);
-  private readonly isLocalPreview = typeof window !== 'undefined'
-    && !window.__MYOBSERVER_RAG_SETTINGS_UI__;
+  private readonly isLocalPreview = this.config.previewMode === true
+    || (typeof window !== 'undefined' && !window.__MYOBSERVER_RAG_SETTINGS_UI__);
 
   loadSettings(): Observable<SettingsPayload> {
     if (this.isLocalPreview) {
@@ -54,6 +57,155 @@ export class SettingsApiService {
 
     return this.http
       .post<AjaxEnvelope<{ message: string; settings: SettingsPayload }>>(this.config.ajaxUrl, body)
+      .pipe(map((response) => response.data));
+  }
+
+  validateHostedApi(baseUrl: string): Observable<{ baseUrl: string; capabilitiesUrl: string; capabilities: HostedApiCapabilities }> {
+    if (this.isLocalPreview) {
+      const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, '');
+      return of({
+        baseUrl: normalizedBaseUrl,
+        capabilitiesUrl: `${normalizedBaseUrl}/v1/capabilities`,
+        capabilities: {
+          service: 'woo-rag-api',
+          version: '0.1.0',
+          timestamp: new Date().toISOString(),
+          billing: {
+            enabled: true,
+            checkout: true,
+            proKeyValidation: true,
+          },
+          runtime: {
+            enabled: false,
+            mode: 'disabled',
+            registerSite: false,
+            init: false,
+            chat: false,
+            sessionReset: false,
+            syncProducts: false,
+          },
+          widgetLoader: {
+            enabled: false,
+            path: '',
+          },
+        },
+      }).pipe(delay(150));
+    }
+
+    const body = this.ajaxBody(this.config.actions.validateHostedApi, this.config.nonces.validateHostedApi)
+      .set('base_url', baseUrl.trim());
+
+    return this.http
+      .post<AjaxEnvelope<{ baseUrl: string; capabilitiesUrl: string; capabilities: HostedApiCapabilities }>>(this.config.ajaxUrl, body)
+      .pipe(map((response) => response.data));
+  }
+
+  registerHostedSite(baseUrl: string, registerUrl: string): Observable<{ message: string; hosted: HostedActivationStatus; settings: SettingsPayload }> {
+    if (this.isLocalPreview) {
+      const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, '');
+      const normalizedRegisterUrl = registerUrl.trim() || `${normalizedBaseUrl}/v1/register-site`;
+      const settings = this.mockSettings();
+      const hosted: HostedActivationStatus = {
+        siteId: 'site_preview123',
+        apiTokenConfigured: true,
+        bootstrapStatus: 'registered',
+        registeredAt: new Date().toISOString(),
+        lastBootstrapCheckAt: new Date().toISOString(),
+        baseUrl: normalizedBaseUrl,
+        registerUrl: normalizedRegisterUrl,
+        initUrl: `${normalizedBaseUrl}/v1/init?site_id=site_preview123`,
+        runtimeMode: 'disabled',
+        message: 'Hosted site registered. Hosted runtime access is not active yet.',
+        access: {
+          available: true,
+          plan: 'free',
+          subscriptionStatus: 'inactive',
+          runtimeEnabled: true,
+          billingEnabled: true,
+          checkoutRequired: false,
+          paidActive: false,
+          entitlementSource: 'free_hosted',
+          upgradeRequired: false,
+          upgradeAvailable: true,
+        },
+        sync: this.emptyHostedSync(),
+      };
+
+      return of({
+        message: hosted.message,
+        hosted,
+        settings: {
+          ...settings,
+          runtimeMode: 'saas' as const,
+          hostedApiBaseUrl: normalizedBaseUrl,
+          saasRegisterUrl: normalizedRegisterUrl,
+          hosted,
+        },
+      }).pipe(delay(150));
+    }
+
+    const body = this.ajaxBody(this.config.actions.registerHostedSite, this.config.nonces.registerHostedSite)
+      .set('base_url', baseUrl.trim())
+      .set('register_url', registerUrl.trim());
+
+    return this.http
+      .post<AjaxEnvelope<{ message: string; hosted: HostedActivationStatus; settings: SettingsPayload }>>(this.config.ajaxUrl, body)
+      .pipe(map((response) => response.data));
+  }
+
+  refreshHostedStatus(baseUrl: string, registerUrl: string): Observable<{ message: string; hosted: HostedActivationStatus; settings: SettingsPayload }> {
+    if (this.isLocalPreview) {
+      const settings = this.mockSettings();
+      return of({
+        message: 'Hosted status refreshed.',
+        hosted: settings.hosted,
+        settings,
+      }).pipe(delay(150));
+    }
+
+    const body = this.ajaxBody(this.config.actions.refreshHostedStatus, this.config.nonces.refreshHostedStatus)
+      .set('base_url', baseUrl.trim())
+      .set('register_url', registerUrl.trim());
+
+    return this.http
+      .post<AjaxEnvelope<{ message: string; hosted: HostedActivationStatus; settings: SettingsPayload }>>(this.config.ajaxUrl, body)
+      .pipe(map((response) => response.data));
+  }
+
+  runHostedSync(baseUrl: string, registerUrl: string): Observable<{ message: string; hosted: HostedActivationStatus; settings: SettingsPayload }> {
+    if (this.isLocalPreview) {
+      const settings = this.mockSettings();
+      const syncedHosted: HostedActivationStatus = {
+        ...settings.hosted,
+        sync: {
+          status: 'completed',
+          productCount: 321,
+          pageCount: 4,
+          sourceUrl: 'https://store.example/wp-json/myobserver-rag/v1/sync-products',
+          startedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+          lastSuccessfulSyncAt: new Date().toISOString(),
+          lastModifiedSince: new Date().toISOString(),
+          lastError: '',
+        },
+      };
+
+      return of({
+        message: 'Hosted catalog sync completed.',
+        hosted: syncedHosted,
+        settings: {
+          ...settings,
+          hosted: syncedHosted,
+        },
+      }).pipe(delay(150));
+    }
+
+    const body = this.ajaxBody(this.config.actions.runHostedSync, this.config.nonces.runHostedSync)
+      .set('base_url', baseUrl.trim())
+      .set('register_url', registerUrl.trim());
+
+    return this.http
+      .post<AjaxEnvelope<{ message: string; hosted: HostedActivationStatus; settings: SettingsPayload }>>(this.config.ajaxUrl, body)
       .pipe(map((response) => response.data));
   }
 
@@ -313,6 +465,7 @@ export class SettingsApiService {
 
   private mockSettings(): SettingsPayload {
     return {
+      runtimeMode: 'local',
       providers: {
         chat: 'openai',
         embeddings: 'openai',
@@ -328,6 +481,8 @@ export class SettingsApiService {
         claudeEmbeddings: 'claude-embedding-v1',
       },
       claudeEmbeddingsUrl: 'https://api.anthropic.com/v1/embeddings',
+      hostedApiBaseUrl: 'https://woo-rag-api.myobserver.io',
+      saasRegisterUrl: 'https://woo-rag-api.myobserver.io/v1/register-site',
       widgetAutoInject: true,
       guardrails: {
         chatTitle: 'Woo Rag Assistant',
@@ -338,14 +493,39 @@ export class SettingsApiService {
         blockCompetitors: true,
         competitorTokens: 'Shopify, Magento, BigCommerce',
       },
+      hosted: {
+        siteId: 'site_preview123',
+        apiTokenConfigured: true,
+        bootstrapStatus: 'verified',
+        registeredAt: new Date().toISOString(),
+        lastBootstrapCheckAt: new Date().toISOString(),
+        baseUrl: 'https://woo-rag-api.myobserver.io',
+        registerUrl: 'https://woo-rag-api.myobserver.io/v1/register-site',
+        initUrl: 'https://woo-rag-api.myobserver.io/v1/init?site_id=site_preview123',
+        runtimeMode: 'hosted',
+        message: 'Hosted site registered and runtime access is active.',
+        access: {
+          available: true,
+          plan: 'pro',
+          subscriptionStatus: 'active',
+          runtimeEnabled: true,
+          billingEnabled: true,
+          checkoutRequired: false,
+        },
+        sync: this.emptyHostedSync(),
+      },
       effective: {
+        runtimeMode: 'local',
         chatProvider: 'openai',
         embeddingsProvider: 'openai',
         openAiConfigured: true,
         claudeConfigured: false,
+        hostedApiConfigured: true,
+        saasRegisterConfigured: true,
         chatReady: true,
         embeddingsReady: true,
         claudeEmbeddingsUrl: 'https://api.anthropic.com/v1/embeddings',
+        hostedApiBaseUrl: 'https://woo-rag-api.myobserver.io',
       },
     };
   }
@@ -448,6 +628,20 @@ export class SettingsApiService {
       created_at: updatedAt,
       updated_at: updatedAt,
       linked_product_ids: productIds,
+    };
+  }
+
+  private emptyHostedSync(): HostedSyncStatus {
+    return {
+      status: '',
+      productCount: 0,
+      pageCount: 0,
+      sourceUrl: '',
+      startedAt: '',
+      completedAt: '',
+      lastSuccessfulSyncAt: '',
+      lastModifiedSince: '',
+      lastError: '',
     };
   }
 }
