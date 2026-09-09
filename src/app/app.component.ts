@@ -2,11 +2,11 @@ import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, ElementRef, OnDestroy, ViewChild, ViewEncapsulation, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { catchError, EMPTY, filter, finalize, Subscription, switchMap, timer } from 'rxjs';
+import { catchError, EMPTY, exhaustMap, filter, finalize, Subscription, switchMap, timer } from 'rxjs';
 import { SettingsApiService } from './settings-api.service';
 import { SETTINGS_UI_CONFIG } from './settings-config.token';
 import { SettingsUiExtensionsService } from './settings-ui-extensions.service';
-import { DocumentItem, HostedActivationStatus, HostedApiCapabilities, IndexStatsResponse, ProductLinkItem, RetrievalDiagnosticResult, SettingsPayload, SettingsUiShellTab } from './settings.models';
+import { MessageRefill, MessagePack, DocumentItem, HostedActivationStatus, HostedApiCapabilities, IndexStatsResponse, ProductLinkItem, RetrievalDiagnosticResult, SettingsPayload, SettingsUiShellTab } from './settings.models';
 
 @Component({
   selector: 'myobserver-rag-settings-ui',
@@ -26,6 +26,15 @@ export class AppComponent {
   private documentRefreshTimeoutId: number | null = null;
   private runtimeModeSubscription?: Subscription;
 
+  protected readonly billingTerms = signal<{ version: string; url: string } | null>(null);
+  protected readonly billingTermsAccepted = signal(false);
+  protected readonly autoRefillOptIn = signal(false);
+  protected readonly refillCapDollars = signal(50);
+  protected readonly refillSettings = signal<MessageRefill | null>(null);
+  protected readonly messagePacks = signal<MessagePack[]>([]);
+  protected readonly billingBusy = signal(false);
+  protected readonly billingMessage = signal('');
+  private checkoutStatusSubscription?: Subscription;
   protected readonly loading = signal(true);
   protected readonly saving = signal(false);
   protected readonly queueing = signal(false);
@@ -127,6 +136,7 @@ export class AppComponent {
   constructor() {
     this.runtimeModeSubscription = this.form.controls.runtimeMode.valueChanges.subscribe(() => {
       this.ensureActiveWidgetTabVisible();
+      if (this.isHostedMode() && !this.loading()) this.loadMessageBilling();
     });
     this.load();
     this.hostedUsageSubscription = timer(60000, 60000).pipe(
@@ -136,6 +146,7 @@ export class AppComponent {
   }
 
   ngOnDestroy(): void {
+    this.checkoutStatusSubscription?.unsubscribe();
     this.hostedUsageSubscription?.unsubscribe();
     this.runtimeModeSubscription?.unsubscribe();
     this.clearDocumentRefreshTimer();
@@ -163,12 +174,79 @@ export class AppComponent {
             widgetAutoInject: settings.widgetAutoInject,
             guardrails: settings.guardrails,
           });
+          if (settings.runtimeMode === 'saas') this.loadMessageBilling();
           this.loadDocuments();
           this.loadIndexStats();
           this.loadExtensionTabs();
         },
         error: (error) => this.setError(error, 'Could not load settings.'),
       });
+  }
+
+  protected loadMessageBilling(): void {
+    this.billingMessage.set('');
+    this.api.messageBilling('list').subscribe({
+      next: response => {
+        this.messagePacks.set(response.packs || []);
+        this.billingTerms.set(response.terms || null);
+        this.billingTermsAccepted.set(response.termsAccepted === true);
+        this.refillSettings.set(response.refill || null);
+        if (response.usage) this.hostedActivation.update(state => state ? { ...state, usage: response.usage } : state);
+      },
+      error: () => this.billingMessage.set('Message billing is unavailable. Please try again.'),
+    });
+    const checkoutId = new URL(window.location.href).searchParams.get('message_checkout');
+    if (checkoutId && (!this.checkoutStatusSubscription || this.checkoutStatusSubscription.closed)) {
+      this.billingMessage.set('Checking payment…');
+      let attempts = 0;
+      this.checkoutStatusSubscription = timer(0, 3000).pipe(
+        exhaustMap(() => this.api.messageBilling('status', { checkout_session_id: checkoutId })),
+      ).subscribe({
+        next: response => {
+          if (response.paid) {
+            this.billingMessage.set('Payment confirmed. Your messages have been added.');
+            if (response.usage) this.hostedActivation.update(state => state ? { ...state, usage: response.usage } : state);
+            const url = new URL(window.location.href);
+            url.searchParams.delete('message_checkout');
+            window.history.replaceState({}, '', url);
+            this.checkoutStatusSubscription?.unsubscribe();
+          } else if (++attempts >= 20) {
+            this.billingMessage.set('Payment is still processing. Messages will appear once payment is confirmed.');
+            this.checkoutStatusSubscription?.unsubscribe();
+          }
+        },
+        error: () => this.billingMessage.set('Could not verify payment yet. Refresh to check again.'),
+      });
+    }
+  }
+
+  protected disableAutoRefill(): void {
+    this.api.messageBilling('disable-refill').subscribe({
+      next: response => {
+        this.refillSettings.set(response.refill || null);
+        this.billingMessage.set('Automatic refill is off. A payment already processing may still complete.');
+      },
+      error: () => this.billingMessage.set('Could not turn off automatic refill. Please try again.'),
+    });
+  }
+
+  protected buyMessages(pack: MessagePack): void {
+    if (!pack.available || this.billingBusy() || !this.billingTermsAccepted()) return;
+    this.billingBusy.set(true);
+    this.billingMessage.set('Opening secure checkout…');
+    this.api.messageBilling('checkout', { pack_id: pack.id, terms_accepted: String(this.billingTermsAccepted()), terms_version: this.billingTerms()?.version || '', auto_refill: String(this.autoRefillOptIn()), monthly_cap: String(Math.round(this.refillCapDollars() * 100)) }).pipe(finalize(() => this.billingBusy.set(false))).subscribe({
+      next: response => {
+        let url: URL;
+        try { url = new URL(response.url || ''); }
+        catch { this.billingMessage.set('Checkout could not be opened. Please try again.'); return; }
+        if (url.protocol !== 'https:' || url.hostname !== 'checkout.stripe.com') {
+          this.billingMessage.set('Checkout could not be opened. Please try again.');
+          return;
+        }
+        window.location.assign(url.toString());
+      },
+      error: error => this.billingMessage.set(error?.error?.data?.message || error?.message || 'Checkout is unavailable.'),
+    });
   }
 
   protected save(): void {
@@ -195,6 +273,7 @@ export class AppComponent {
         next: (response) => {
           this.currentSettings.set(response.settings);
           this.hostedActivation.set(response.settings.hosted);
+          if (response.settings.runtimeMode === 'saas') this.loadMessageBilling();
           this.setStatus(response.message, 'success', 'global');
           this.form.reset({
             runtimeMode: response.settings.runtimeMode,
@@ -331,6 +410,7 @@ export class AppComponent {
         next: (response) => {
           this.currentSettings.set(response.settings);
           this.hostedActivation.set(response.hosted);
+          this.loadMessageBilling();
           this.form.patchValue({
             hostedApiBaseUrl: response.settings.hostedApiBaseUrl,
             saasRegisterUrl: response.settings.saasRegisterUrl,
@@ -352,6 +432,7 @@ export class AppComponent {
         next: (response) => {
           this.currentSettings.set(response.settings);
           this.hostedActivation.set(response.hosted);
+          this.loadMessageBilling();
           this.setStatus(response.message, 'success', 'hostedApi');
         },
         error: (error) => this.setError(error, 'Could not refresh hosted status.', 'hostedApi'),
@@ -374,6 +455,7 @@ export class AppComponent {
         next: (response) => {
           this.currentSettings.set(response.settings);
           this.hostedActivation.set(response.hosted);
+          this.loadMessageBilling();
           this.setStatus(response.message, 'success', 'hostedApi');
         },
         error: (error) => this.setError(error, 'Could not run hosted catalog sync.', 'hostedApi'),
@@ -394,10 +476,6 @@ export class AppComponent {
     void this.renderExternalWidgetTab(tabId);
   }
 
-  protected showWidgetUpgradeCta(): boolean {
-    return !this.widgetTabs().some((tab) => tab.id === 'chat-analytics');
-  }
-
   private ensureActiveWidgetTabVisible(): void {
     const activeTab = this.activeWidgetTab();
     const isHostedHiddenTab = this.isHostedMode() && (activeTab === 'diagnostics' || activeTab === 'safety');
@@ -405,15 +483,6 @@ export class AppComponent {
     if (isHostedHiddenTab) {
       this.activeWidgetTab.set('assistant');
     }
-  }
-
-  protected openWidgetUpgrade(): void {
-    const url = String(this.config.upgradeUrl || '').trim();
-    if (url === '') {
-      return;
-    }
-
-    window.open(url, '_blank', 'noopener,noreferrer');
   }
 
   protected scrollDocumentQueue(direction: 'left' | 'right'): void {

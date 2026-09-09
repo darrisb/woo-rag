@@ -3,6 +3,7 @@ import { inject, Injectable } from '@angular/core';
 import { delay, map, Observable, of } from 'rxjs';
 import { SETTINGS_UI_CONFIG } from './settings-config.token';
 import {
+  MessageBillingResponse,
   DocumentDetailResponse,
   DocumentDeleteResponse,
   DocumentItem,
@@ -32,6 +33,20 @@ export class SettingsApiService {
   private readonly config = inject(SETTINGS_UI_CONFIG);
   private readonly isLocalPreview = this.config.previewMode === true
     || (typeof window !== 'undefined' && !window.__MYOBSERVER_RAG_SETTINGS_UI__);
+
+  messageBilling(operation: 'list' | 'checkout' | 'status' | 'disable-refill', values: Record<string, string> = {}): Observable<MessageBillingResponse> {
+    if (this.isLocalPreview) {
+      return of({ ok: true, enabled: false, packs: [1000, 5000, 20000].map(messages => ({
+        id: `messages_${messages}`, messages, available: false, amount: null, currency: ''
+      })) }).pipe(delay(100));
+    }
+    let body = this.ajaxBody(this.config.actions.messageBilling, this.config.nonces.messageBilling).set('operation', operation);
+    for (const [key, value] of Object.entries(values)) body = body.set(key, value);
+    return this.http.post<AjaxEnvelope<MessageBillingResponse>>(this.config.ajaxUrl, body).pipe(map(response => {
+      if (!response.success) throw new Error((response.data as unknown as { message: string }).message || 'Billing request failed.');
+      return response.data;
+    }));
+  }
 
   loadSettings(): Observable<SettingsPayload> {
     if (this.isLocalPreview) {
@@ -506,7 +521,7 @@ export class SettingsApiService {
         message: 'Hosted site registered and runtime access is active.',
         access: {
           available: true,
-          plan: 'pro',
+          plan: 'free',
           subscriptionStatus: 'active',
           runtimeEnabled: true,
           billingEnabled: true,

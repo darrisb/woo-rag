@@ -28,16 +28,42 @@
     <ng-container *ngIf="isHostedMode()">
       <section class="notice" role="status" aria-live="polite" *ngIf="hostedActivation()?.usage as usage"
         [class.error]="usage.reached">
-        <strong *ngIf="usage.reached">Monthly message limit reached.</strong>
-        <span>{{ usage.used | number }}<ng-container *ngIf="usage.limit > 0"> / {{ usage.limit | number
-            }}</ng-container> messages used this month.</span>
+        <strong *ngIf="usage.reached">No messages remaining.</strong>
+        <span>Free account · {{ usage.freeUsed ?? usage.used | number }} / {{ usage.limit | number }} free messages used this month.</span>
+        <p>{{ usage.purchasedRemaining ?? 0 | number }} purchased messages remaining. Purchased messages roll over.</p>
         <ng-container *ngIf="usage.reached">
           <p>Customers will receive a temporary assistance message. Your plan and billing details are not shown in chat.
           </p>
           <p *ngIf="usage.resetsAt">Your allowance resets on {{ usage.resetsAt | date:'mediumDate':'UTC' }} (UTC).</p>
-          <button type="button" class="primary" *ngIf="hostedActivation()?.access?.plan === 'free'"
-            (click)="openWidgetUpgrade()">Upgrade to Pro</button>
+
         </ng-container>
+      </section>
+      <section class="panel" aria-label="Message packs">
+        <div class="panel-head"><h3>Buy more messages</h3><button type="button" (click)="loadMessageBilling()">Refresh balance</button></div>
+        <p>Your free monthly messages are used first. One successful AI reply uses one message; failed replies are not charged.</p>
+        <p *ngIf="refillSettings()?.enabled">
+          Automatic refill is on for {{ refillSettings()?.packId?.replace('messages_', '') }} messages.
+          {{ (refillSettings()!.spent / 100) | currency:'USD' }} of your {{ (refillSettings()!.monthlyCap / 100) | currency:'USD' }} monthly refill cap is used or processing.
+          <button type="button" (click)="disableAutoRefill()">Turn off automatic refill</button>
+        </p>
+        <p *ngIf="refillSettings()?.lastError" role="status">{{ refillSettings()?.lastError }}</p>
+        <label class="toggle-row" *ngIf="billingTerms() as terms"><input type="checkbox" [checked]="billingTermsAccepted()" (change)="billingTermsAccepted.set($any($event.target).checked)" />
+          I accept the <a [href]="terms.url" target="_blank" rel="noopener noreferrer">Terms of Service</a>.</label>
+        <label class="toggle-row"><input type="checkbox" [checked]="autoRefillOptIn()" (change)="autoRefillOptIn.set($any($event.target).checked)" />
+          Enable automatic refill with this purchase (optional)</label>
+        <p *ngIf="autoRefillOptIn()">
+          I authorize saving my card and charging the selected pack's price when my available messages fall to 100 or fewer.
+          Monthly automatic refill spending cap (USD):
+          <input type="number" min="1" max="10000" step="1" [value]="refillCapDollars()" (input)="refillCapDollars.set(+$any($event.target).value)" aria-label="Monthly automatic refill spending cap in dollars" />
+          This purchase is separate from the cap. The cap resets each calendar month in UTC. Turn off refill here at any time.
+        </p>
+        <div class="button-row">
+          <button type="button" *ngFor="let pack of messagePacks()" [disabled]="!pack.available || billingBusy() || !billingTermsAccepted()" (click)="buyMessages(pack)">
+            {{ pack.messages | number }} messages · {{ pack.available ? ((pack.amount! / 100) | currency:pack.currency.toUpperCase()) : 'Coming soon' }}
+          </button>
+        </div>
+        <p *ngIf="messagePacks().length === 0">Connect your hosted account and refresh to see message packs.</p>
+        <p role="status" aria-live="polite" *ngIf="billingMessage()">{{ billingMessage() }}</p>
       </section>
     </ng-container>
 
@@ -124,14 +150,8 @@
             </section>
 
             <section class="notice inline-notice" role="note" *ngIf="hostedActivation() as hosted">
-              <strong>Stored hosted state:</strong>
-              Site ID {{ hosted.siteId || 'not registered' }}.
-              Bootstrap {{ hosted.bootstrapStatus || 'unknown' }}.
-              Plan {{ hosted.access.plan || 'unknown' }}.
-              Subscription {{ hosted.access.subscriptionStatus || 'unknown' }}.
-              Runtime {{ hosted.access.runtimeEnabled ? 'enabled' : 'disabled' }}.
-              Checkout {{ hosted.access.checkoutRequired ? 'required' : 'not required' }}.
-              Token {{ hosted.apiTokenConfigured ? 'stored' : 'missing' }}.
+              <strong>Free hosted account:</strong>
+              {{ hosted.apiTokenConfigured && hosted.access.runtimeEnabled ? 'Connected' : 'Needs connection' }}.
               Sync {{ hosted.sync.status || 'not run' }}.
               Products {{ hosted.sync.productCount || 0 }}.
               <span *ngIf="hosted.sync.pageCount">Pages {{ hosted.sync.pageCount }}.</span>
@@ -271,10 +291,7 @@
             [class.active]="activeWidgetTab() === tab.id" (click)="setActiveWidgetTab(tab.id)">
             {{ tab.label }}
           </button>
-          <button type="button" class="tab-btn tab-add-btn" *ngIf="showWidgetUpgradeCta()" (click)="openWidgetUpgrade()"
-            aria-label="Explore additional widget tabs" title="Explore additional widget tabs">
-            +
-          </button>
+
         </div>
 
         <ng-container *ngIf="activeWidgetTab() === 'assistant'; else nonAssistantTab">

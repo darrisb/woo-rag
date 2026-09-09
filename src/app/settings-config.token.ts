@@ -28,6 +28,7 @@ export interface SettingsUiConfig {
     validateHostedApi: string;
     registerHostedSite: string;
     refreshHostedStatus: string;
+    messageBilling: string;
     runHostedSync: string;
     openAiModels: string;
     claudeModels: string;
@@ -39,6 +40,7 @@ export interface SettingsUiConfig {
     validateHostedApi: string;
     registerHostedSite: string;
     refreshHostedStatus: string;
+    messageBilling: string;
     runHostedSync: string;
     openAiModels: string;
     claudeModels: string;
@@ -84,6 +86,7 @@ const fallbackConfig: SettingsUiConfig = {
     validateHostedApi: 'myobserver_rag_validate_hosted_api',
     registerHostedSite: 'myobserver_rag_register_hosted_site',
     refreshHostedStatus: 'myobserver_rag_refresh_hosted_status',
+    messageBilling: 'myobserver_rag_message_billing',
     runHostedSync: 'myobserver_rag_run_hosted_sync',
     openAiModels: 'myobserver_rag_list_openai_models',
     claudeModels: 'myobserver_rag_list_claude_models',
@@ -95,6 +98,7 @@ const fallbackConfig: SettingsUiConfig = {
     validateHostedApi: 'dev',
     registerHostedSite: 'dev',
     refreshHostedStatus: 'dev',
+    messageBilling: 'dev',
     runHostedSync: 'dev',
     openAiModels: 'dev',
     claudeModels: 'dev',

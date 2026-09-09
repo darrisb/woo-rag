@@ -45,7 +45,7 @@ export interface HostedSyncStatus {
 }
 
 export interface HostedActivationStatus {
-  usage?: { used: number; limit: number; remaining: number; reached: boolean; resetsAt: string } | null;
+  usage?: MessageUsage | null;
   siteId: string;
   apiTokenConfigured: boolean;
   bootstrapStatus: string;
@@ -255,4 +255,44 @@ export interface SettingsUiShellTab {
   elementTag?: string;
   scriptUrl?: string;
   order: number;
+}
+
+export interface MessageUsage {
+  used: number;
+  limit: number;
+  remaining: number;
+  reached: boolean;
+  resetsAt: string;
+  freeUsed?: number;
+  freeRemaining?: number;
+  purchasedRemaining?: number;
+}
+
+export interface MessagePack {
+  id: string;
+  messages: number;
+  available: boolean;
+  amount: number | null;
+  currency: string;
+}
+
+export interface MessageRefill {
+  enabled: boolean;
+  packId: string;
+  monthlyCap: number;
+  spent: number;
+  currency: string;
+  lastError: string;
+}
+
+export interface MessageBillingResponse {
+  terms?: { version: string; url: string } | null;
+  termsAccepted?: boolean;
+  refill?: MessageRefill;
+  ok: boolean;
+  packs?: MessagePack[];
+  usage?: MessageUsage;
+  enabled?: boolean;
+  url?: string;
+  paid?: boolean;
 }
