@@ -439,7 +439,7 @@ export class AppComponent {
       });
   }
 
-  protected runHostedSync(): void {
+  protected runHostedSync(forceReindex = false): void {
     const baseUrl = this.form.controls.hostedApiBaseUrl.value.trim();
     const registerUrl = this.form.controls.saasRegisterUrl.value.trim();
     if (!baseUrl) {
@@ -449,7 +449,7 @@ export class AppComponent {
 
     this.syncingHostedCatalog.set(true);
     this.setStatus('Running hosted catalog sync...', 'neutral', 'hostedApi');
-    this.api.runHostedSync(baseUrl, registerUrl)
+    this.api.runHostedSync(baseUrl, registerUrl, forceReindex)
       .pipe(finalize(() => this.syncingHostedCatalog.set(false)))
       .subscribe({
         next: (response) => {

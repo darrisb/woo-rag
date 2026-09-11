@@ -187,7 +187,7 @@ export class SettingsApiService {
       .pipe(map((response) => response.data));
   }
 
-  runHostedSync(baseUrl: string, registerUrl: string): Observable<{ message: string; hosted: HostedActivationStatus; settings: SettingsPayload }> {
+  runHostedSync(baseUrl: string, registerUrl: string, forceReindex = false): Observable<{ message: string; hosted: HostedActivationStatus; settings: SettingsPayload }> {
     if (this.isLocalPreview) {
       const settings = this.mockSettings();
       const syncedHosted: HostedActivationStatus = {
@@ -217,7 +217,8 @@ export class SettingsApiService {
 
     const body = this.ajaxBody(this.config.actions.runHostedSync, this.config.nonces.runHostedSync)
       .set('base_url', baseUrl.trim())
-      .set('register_url', registerUrl.trim());
+      .set('register_url', registerUrl.trim())
+      .set('force_reindex', forceReindex ? '1' : '0');
 
     return this.http
       .post<AjaxEnvelope<{ message: string; hosted: HostedActivationStatus; settings: SettingsPayload }>>(this.config.ajaxUrl, body)

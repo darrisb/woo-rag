@@ -29,7 +29,8 @@
       <section class="notice" role="status" aria-live="polite" *ngIf="hostedActivation()?.usage as usage"
         [class.error]="usage.reached">
         <strong *ngIf="usage.reached">No messages remaining.</strong>
-        <span>Free account · {{ usage.freeUsed ?? usage.used | number }} / {{ usage.limit | number }} free messages used this month.</span>
+        <span>Free account · {{ usage.freeUsed ?? usage.used | number }} / {{ usage.limit | number }} free messages used
+          this month.</span>
         <p>{{ usage.purchasedRemaining ?? 0 | number }} purchased messages remaining. Purchased messages roll over.</p>
         <ng-container *ngIf="usage.reached">
           <p>Customers will receive a temporary assistance message. Your plan and billing details are not shown in chat.
@@ -39,27 +40,39 @@
         </ng-container>
       </section>
       <section class="panel" aria-label="Message packs">
-        <div class="panel-head"><h3>Buy more messages</h3><button type="button" (click)="loadMessageBilling()">Refresh balance</button></div>
-        <p>Your free monthly messages are used first. One successful AI reply uses one message; failed replies are not charged.</p>
+        <div class="panel-head">
+          <h3>Buy more messages</h3><button type="button" (click)="loadMessageBilling()">Refresh balance</button>
+        </div>
+        <p>Your free monthly messages are used first. One successful AI reply uses one message; failed replies are not
+          charged.</p>
         <p *ngIf="refillSettings()?.enabled">
           Automatic refill is on for {{ refillSettings()?.packId?.replace('messages_', '') }} messages.
-          {{ (refillSettings()!.spent / 100) | currency:'USD' }} of your {{ (refillSettings()!.monthlyCap / 100) | currency:'USD' }} monthly refill cap is used or processing.
+          {{ (refillSettings()!.spent / 100) | currency:'USD' }} of your {{ (refillSettings()!.monthlyCap / 100) |
+          currency:'USD' }} monthly refill cap is used or processing.
           <button type="button" (click)="disableAutoRefill()">Turn off automatic refill</button>
         </p>
         <p *ngIf="refillSettings()?.lastError" role="status">{{ refillSettings()?.lastError }}</p>
-        <label class="toggle-row" *ngIf="billingTerms() as terms"><input type="checkbox" [checked]="billingTermsAccepted()" (change)="billingTermsAccepted.set($any($event.target).checked)" />
+        <label class="toggle-row" *ngIf="billingTerms() as terms"><input type="checkbox"
+            [checked]="billingTermsAccepted()" (change)="billingTermsAccepted.set($any($event.target).checked)" />
           I accept the <a [href]="terms.url" target="_blank" rel="noopener noreferrer">Terms of Service</a>.</label>
-        <label class="toggle-row"><input type="checkbox" [checked]="autoRefillOptIn()" (change)="autoRefillOptIn.set($any($event.target).checked)" />
+        <label class="toggle-row"><input type="checkbox" [checked]="autoRefillOptIn()"
+            (change)="autoRefillOptIn.set($any($event.target).checked)" />
           Enable automatic refill with this purchase (optional)</label>
         <p *ngIf="autoRefillOptIn()">
-          I authorize saving my card and charging the selected pack's price when my available messages fall to 100 or fewer.
+          I authorize saving my card and charging the selected pack's price when my available messages fall to 100 or
+          fewer.
           Monthly automatic refill spending cap (USD):
-          <input type="number" min="1" max="10000" step="1" [value]="refillCapDollars()" (input)="refillCapDollars.set(+$any($event.target).value)" aria-label="Monthly automatic refill spending cap in dollars" />
-          This purchase is separate from the cap. The cap resets each calendar month in UTC. Turn off refill here at any time.
+          <input type="number" min="1" max="10000" step="1" [value]="refillCapDollars()"
+            (input)="refillCapDollars.set(+$any($event.target).value)"
+            aria-label="Monthly automatic refill spending cap in dollars" />
+          This purchase is separate from the cap. The cap resets each calendar month in UTC. Turn off refill here at any
+          time.
         </p>
         <div class="button-row">
-          <button type="button" *ngFor="let pack of messagePacks()" [disabled]="!pack.available || billingBusy() || !billingTermsAccepted()" (click)="buyMessages(pack)">
-            {{ pack.messages | number }} messages · {{ pack.available ? ((pack.amount! / 100) | currency:pack.currency.toUpperCase()) : 'Coming soon' }}
+          <button type="button" *ngFor="let pack of messagePacks()"
+            [disabled]="!pack.available || billingBusy() || !billingTermsAccepted()" (click)="buyMessages(pack)">
+            {{ pack.messages | number }} messages · {{ pack.available ? ((pack.amount! / 100) |
+            currency:pack.currency.toUpperCase()) : 'Coming soon' }}
           </button>
         </div>
         <p *ngIf="messagePacks().length === 0">Connect your hosted account and refresh to see message packs.</p>
@@ -129,7 +142,14 @@
                 [disabled]="syncingHostedCatalog()">
                 {{ syncingHostedCatalog() ? 'Syncing catalog...' : 'Run hosted sync' }}
               </button>
+              <button type="button" class="secondary action-utility-btn" (click)="runHostedSync(true)"
+                [disabled]="syncingHostedCatalog() || registeringHostedSite()">
+                Force reindex
+              </button>
             </div>
+
+            <p>Normal sync reuses unchanged embeddings. Force reindex rebuilds all product and document embeddings and
+              incurs embedding API usage.</p>
 
             <section class="notice inline-notice" *ngIf="hostedApiStatusMessage()"
               [class.success]="hostedApiStatusTone() === 'success'" [class.error]="hostedApiStatusTone() === 'error'">
